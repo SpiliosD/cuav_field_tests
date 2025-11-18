@@ -34,7 +34,7 @@ from data_reader.parsing.spectra import (
 )
 from data_reader.parsing.logs import read_log_files, extract_log_timestamps
 
-PROCESSED_SUFFIX = "_LogData.txt"
+PROCESSED_SUFFIX = "_Peak.txt"
 RAW_FILE_PATTERN = "spectra_*.txt"
 
 
@@ -46,7 +46,7 @@ class MatchedEntry:
     Attributes
     ----------
     processed_timestamp
-        Timestamp string from the processed `_LogData.txt` line.
+        Timestamp string from the processed `_Peak.txt` line.
     raw_datetime
         Formatted datetime string parsed from the raw spectra filename.
     raw_timestamp
@@ -59,6 +59,11 @@ class MatchedEntry:
     Creating explicit objects (even lightweight ones) improves readability when we
     build the list of tuples and enables us to document each component clearly.
     """
+
+    processed_timestamp: str
+    raw_datetime: str
+    raw_timestamp: str
+    raw_path: str
 
     def as_tuple(self) -> tuple[str, str, str, str]:
         return (
@@ -79,19 +84,19 @@ def _resolve_existing_path(path_like: str | Path) -> Path:
 
 
 def _iter_processed_log_files(root: Path) -> Iterable[Path]:
-    """Yield every processed `_LogData.txt` found under ``root``."""
+    """Yield every processed `_Peak.txt` found under ``root``."""
 
     yield from root.rglob(f"*{PROCESSED_SUFFIX}")
 
 
 def _read_timestamps_from_file(file_path: Path) -> list[str]:
     """
-    Read the first whitespace-delimited token from each line in a processed log.
+    Read the third whitespace-delimited token from each line in a processed log.
 
     Inputs
     ------
     file_path : Path
-        Location of the `_LogData.txt` file whose lines contain timestamps.
+        Location of the `_Peak.txt` file whose lines contain timestamps.
 
     Outputs
     -------
@@ -100,19 +105,25 @@ def _read_timestamps_from_file(file_path: Path) -> list[str]:
 
     Why we need it
     --------------
-    The processed files store multiple columns per line, but only the first token
-    represents the timestamp we need for alignment. Isolating this extraction keeps
+    The processed `_Peak.txt` files store multiple columns per line, with the
+    timestamp in the third column (index 2). Isolating this extraction keeps
     the main matching routine tidy and makes it easier to extend (e.g., to capture
     additional metadata from the same lines).
     """
 
     timestamps: list[str] = []
     with file_path.open("r", encoding="utf-8") as handle:
-        for line in handle:
+        for line_num, line in enumerate(handle, start=1):
             stripped = line.strip()
             if not stripped:
                 continue
-            timestamps.append(stripped.split()[0])
+            tokens = stripped.split()
+            if len(tokens) < 3:
+                raise ValueError(
+                    f"Line {line_num} in {file_path} has fewer than 3 columns. "
+                    f"Found {len(tokens)} column(s). Expected format: <col1> <col2> <timestamp> ..."
+                )
+            timestamps.append(tokens[2])  # Third element (index 2)
     return timestamps
 
 
@@ -153,7 +164,7 @@ def match_processed_and_raw(
     ------
     processed_root : Path-like
         Root of the processed tree (e.g., ``Wind/YYYY-MM-DD``). Each leaf folder
-        must contain `_LogData.txt`.
+        must contain `_Peak.txt`.
     raw_root : Path-like
         Root of the raw spectra tree that mirrors ``processed_root``.
 
@@ -212,7 +223,7 @@ def filter_matches_by_log_timestamps(
     matches: list[tuple[str, str, str, str]],
     log_file_path: str | Path,
     *,
-    atol: float = 1e-6,
+    atol: float = 0.0001,
 ) -> list[tuple[str, str, str, str]]:
     """
     Drop matched tuples whose processed timestamp is absent from the log file.
@@ -224,28 +235,43 @@ def filter_matches_by_log_timestamps(
     log_file_path : Path-like
         Log file whose third row contains the canonical timestamps.
     atol : float
-        Absolute tolerance for comparing float timestamps.
+        Absolute tolerance for comparing float timestamps. Default is 0.0001.
 
     Outputs
     -------
     list[tuple[str, str, str, str]]
         Filtered list retaining only entries whose processed timestamps match
-        log timestamps.
+        log timestamps within the specified tolerance.
 
     Why we need it
     --------------
     In some runs, processed files may contain timestamps that were dropped or never
     recorded in the log due to connectivity issues. Filtering keeps subsequent
-    analyses consistent with the authoritative log.
+    analyses consistent with the authoritative log. Uses tolerance-based matching
+    (atol=0.00001 by default) to account for small floating-point precision differences.
     """
 
     log_timestamps = np.asarray(extract_log_timestamps(log_file_path), dtype=float)
+    
+    # Normalize timestamps to 6 decimal places to match common precision format
+    # This helps with floating-point precision issues
+    log_timestamps_normalized = np.round(log_timestamps, decimals=6)
 
     filtered: list[tuple[str, str, str, str]] = []
     for entry in matches:
-        processed_ts = float(entry[0])
-        if np.isclose(processed_ts, log_timestamps, atol=atol).any():
-            filtered.append(entry)
+        try:
+            processed_ts = float(entry[0])
+            # Normalize processed timestamp to same precision
+            processed_ts_normalized = round(processed_ts, 6)
+            
+            # Check if processed_ts is within tolerance of any log timestamp
+            differences = np.abs(log_timestamps_normalized - processed_ts_normalized)
+            if np.any(differences <= atol):
+                filtered.append(entry)
+        except (ValueError, TypeError) as e:
+            # Skip entries with invalid timestamps
+            continue
+    
     return filtered
 
 

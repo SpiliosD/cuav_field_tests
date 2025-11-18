@@ -1,13 +1,15 @@
 """
 High-level helpers for pairing processed and raw spectra data.
 
-This package consolidates three main capabilities:
+This package consolidates four main capabilities:
 
 1. Parsing: understand spectra filenames and log files to recover datetime/timestamp
    metadata (`data_reader.parsing`).
-2. Processing: filter processed arrays to keep entries that align with log timestamps
+2. Reading: load processed and raw data files from disk into NumPy arrays
+   (`data_reader.reading`).
+3. Processing: filter processed arrays to keep entries that align with log timestamps
    (`data_reader.processing`).
-3. Matching: traverse processed/raw directory trees and generate aligned metadata
+4. Matching: traverse processed/raw directory trees and generate aligned metadata
    tuples (`data_reader.matching`).
 
 Expose the most commonly used functions at the package root so downstream scripts
@@ -23,7 +25,13 @@ from data_reader.parsing.spectra import (
     timestamp_from_spectra_filename,
 )
 from data_reader.parsing.logs import read_log_files
+from data_reader.processing.aggregation import build_timestamp_data_dict
 from data_reader.processing.filters import filter_processed_array_by_timestamps
+from data_reader.reading.readers import (
+    read_processed_data_file,
+    read_raw_spectra_file,
+    read_text_data_file,
+)
 
 __all__ = [
     "match_processed_and_raw",
@@ -31,6 +39,10 @@ __all__ = [
     "timestamp_from_spectra_filename",
     "datetime_to_epoch_seconds",
     "read_log_files",
+    "build_timestamp_data_dict",
     "filter_processed_array_by_timestamps",
+    "read_processed_data_file",
+    "read_raw_spectra_file",
+    "read_text_data_file",
 ]
 
