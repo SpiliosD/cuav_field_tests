@@ -1,0 +1,264 @@
+"""Match processed timestamps with raw spectra files.
+
+These utilities traverse parallel directory trees containing processed text files
+and raw spectra files. The goal is to align the first timestamp of each processed
+line with the corresponding raw spectra file, producing tuples with:
+
+1. The processed timestamp (as string, typically seconds since epoch)
+2. The human-readable datetime parsed from the raw filename
+3. The epoch-style timestamp derived from #2
+4. The absolute path to the raw spectra file
+
+We also provide a filter that removes matches whose processed timestamps do not
+appear in the authoritative log file (row 2). Centralizing this logic guarantees
+consistent ordering, validation, and error handling across the codebase.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable, List, Tuple
+import sys
+
+import numpy as np
+
+if __package__ in (None, ""):
+    project_root = Path(__file__).resolve().parents[1]
+    if str(project_root) not in sys.path:
+        sys.path.insert(0, str(project_root))
+
+from data_reader.parsing.spectra import (
+    datetime_to_epoch_seconds,
+    timestamp_from_spectra_filename,
+)
+from data_reader.parsing.logs import read_log_files, extract_log_timestamps
+
+PROCESSED_SUFFIX = "_LogData.txt"
+RAW_FILE_PATTERN = "spectra_*.txt"
+
+
+@dataclass(frozen=True)
+class MatchedEntry:
+    """
+    Container representing a matched processed/raw pair.
+
+    Attributes
+    ----------
+    processed_timestamp
+        Timestamp string from the processed `_LogData.txt` line.
+    raw_datetime
+        Formatted datetime string parsed from the raw spectra filename.
+    raw_timestamp
+        Seconds-since-epoch representation derived from ``raw_datetime``.
+    raw_path
+        Absolute path to the raw ASCII spectra file.
+
+    Why we need it
+    --------------
+    Creating explicit objects (even lightweight ones) improves readability when we
+    build the list of tuples and enables us to document each component clearly.
+    """
+
+    def as_tuple(self) -> tuple[str, str, str, str]:
+        return (
+            self.processed_timestamp,
+            self.raw_datetime,
+            self.raw_timestamp,
+            self.raw_path,
+        )
+
+
+def _resolve_existing_path(path_like: str | Path) -> Path:
+    """Resolve a user-supplied path and ensure it exists."""
+
+    path = Path(path_like).expanduser().resolve()
+    if not path.exists():
+        raise FileNotFoundError(f"Path does not exist: {path}")
+    return path
+
+
+def _iter_processed_log_files(root: Path) -> Iterable[Path]:
+    """Yield every processed `_LogData.txt` found under ``root``."""
+
+    yield from root.rglob(f"*{PROCESSED_SUFFIX}")
+
+
+def _read_timestamps_from_file(file_path: Path) -> list[str]:
+    """
+    Read the first whitespace-delimited token from each line in a processed log.
+
+    Inputs
+    ------
+    file_path : Path
+        Location of the `_LogData.txt` file whose lines contain timestamps.
+
+    Outputs
+    -------
+    list[str]
+        Ordered list of timestamp strings.
+
+    Why we need it
+    --------------
+    The processed files store multiple columns per line, but only the first token
+    represents the timestamp we need for alignment. Isolating this extraction keeps
+    the main matching routine tidy and makes it easier to extend (e.g., to capture
+    additional metadata from the same lines).
+    """
+
+    timestamps: list[str] = []
+    with file_path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            stripped = line.strip()
+            if not stripped:
+                continue
+            timestamps.append(stripped.split()[0])
+    return timestamps
+
+
+def _sorted_raw_files(folder: Path) -> list[Path]:
+    """
+    Return chronologically sorted spectra files for ``folder``.
+
+    Inputs
+    ------
+    folder : Path
+        Folder mirroring a processed directory, expected to contain ASCII spectra.
+
+    Outputs
+    -------
+    list[Path]
+        Sorted list of spectra files matching ``RAW_FILE_PATTERN``.
+
+    Why we need it
+    --------------
+    Spectra filenames already encode timestamps; sorting ensures we pair them with
+    processed timestamps by index, even if the filesystem order is not deterministic.
+    """
+
+    files = sorted(folder.glob(RAW_FILE_PATTERN))
+    if not files:
+        raise FileNotFoundError(f"No raw files matching '{RAW_FILE_PATTERN}' found in {folder}")
+    return files
+
+
+def match_processed_and_raw(
+    processed_root: str | Path,
+    raw_root: str | Path,
+) -> list[tuple[str, str, str, str]]:
+    """
+    Traverse processed/raw directory trees and align timestamps by index.
+
+    Inputs
+    ------
+    processed_root : Path-like
+        Root of the processed tree (e.g., ``Wind/YYYY-MM-DD``). Each leaf folder
+        must contain `_LogData.txt`.
+    raw_root : Path-like
+        Root of the raw spectra tree that mirrors ``processed_root``.
+
+    Outputs
+    -------
+    list[tuple[str, str, str, str]]
+        Each tuple contains (processed_timestamp, raw_datetime, raw_epoch, raw_path).
+
+    Why we need it
+    --------------
+    Downstream analyses often require referencing both processed metrics and the
+    original raw spectra file for each timestamp. This function automates the
+    directory traversal and pairing so higher-level scripts can work with a
+    pre-aligned array instead of reimplementing the logic.
+    """
+
+    processed_base = _resolve_existing_path(processed_root)
+    raw_base = _resolve_existing_path(raw_root)
+
+    combined: list[MatchedEntry] = []
+
+    for log_file in _iter_processed_log_files(processed_base):
+        folder = log_file.parent
+        relative_folder = folder.relative_to(processed_base)
+        raw_folder = raw_base / relative_folder
+
+        if not raw_folder.exists():
+            raise FileNotFoundError(
+                f"Missing raw folder for processed folder '{folder}': expected '{raw_folder}'",
+            )
+
+        processed_timestamps = _read_timestamps_from_file(log_file)
+        raw_files = _sorted_raw_files(raw_folder)
+
+        if len(processed_timestamps) != len(raw_files):
+            raise ValueError(
+                "Mismatch between processed timestamps and raw files in "
+                f"folder '{folder}': {len(processed_timestamps)} vs {len(raw_files)}",
+            )
+
+        for processed_ts, raw_path in zip(processed_timestamps, raw_files):
+            raw_dt = timestamp_from_spectra_filename(raw_path)
+            combined.append(
+                MatchedEntry(
+                    processed_timestamp=processed_ts,
+                    raw_datetime=raw_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
+                    raw_timestamp=datetime_to_epoch_seconds(raw_dt),
+                    raw_path=str(raw_path),
+                ),
+            )
+
+    return [entry.as_tuple() for entry in combined]
+
+
+def filter_matches_by_log_timestamps(
+    matches: list[tuple[str, str, str, str]],
+    log_file_path: str | Path,
+    *,
+    atol: float = 1e-6,
+) -> list[tuple[str, str, str, str]]:
+    """
+    Drop matched tuples whose processed timestamp is absent from the log file.
+
+    Inputs
+    ------
+    matches : list of tuples
+        Output of :func:`match_processed_and_raw`.
+    log_file_path : Path-like
+        Log file whose third row contains the canonical timestamps.
+    atol : float
+        Absolute tolerance for comparing float timestamps.
+
+    Outputs
+    -------
+    list[tuple[str, str, str, str]]
+        Filtered list retaining only entries whose processed timestamps match
+        log timestamps.
+
+    Why we need it
+    --------------
+    In some runs, processed files may contain timestamps that were dropped or never
+    recorded in the log due to connectivity issues. Filtering keeps subsequent
+    analyses consistent with the authoritative log.
+    """
+
+    log_timestamps = np.asarray(extract_log_timestamps(log_file_path), dtype=float)
+
+    filtered: list[tuple[str, str, str, str]] = []
+    for entry in matches:
+        processed_ts = float(entry[0])
+        if np.isclose(processed_ts, log_timestamps, atol=atol).any():
+            filtered.append(entry)
+    return filtered
+
+
+if __name__ == "__main__":
+    processed_root = r"G:\Raymetrics_Tests\BOMA2025\20250922\Wind"
+    raw_root = r"G:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind"
+    log_file = r"G:\Raymetrics_Tests\BOMA2025\20250922\output.txt"
+
+    all_matches = match_processed_and_raw(processed_root, raw_root)
+    print(f"Total matches found: {len(all_matches)}")
+    print("First match:", all_matches[0] if all_matches else "None")
+
+    filtered_matches = filter_matches_by_log_timestamps(all_matches, log_file)
+    print(f"Matches after filtering by log timestamps: {len(filtered_matches)}")
+    print("First filtered match:", filtered_matches[0] if filtered_matches else "None")
+
