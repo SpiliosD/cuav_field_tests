@@ -46,7 +46,7 @@ visualization_output_dir=visualization_output
 # Options: 'test' or 'heatmaps'
 # 'test': Run the complete test suite (total_test.py)
 # 'heatmaps': Generate heatmaps using parameters below
-run_mode=heatmaps
+run_mode=test
 
 # Heatmap Parameters (only used when run_mode='heatmaps')
 # Comma-separated list of parameters: 'wind', 'snr', 'peak', 'spectrum'
