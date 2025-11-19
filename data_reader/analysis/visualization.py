@@ -512,17 +512,7 @@ def process_single_profiles(
         # We'll determine the actual number from the first spectrum we encounter
         num_freq_bins = None
         frequencies = None
-        
-        # Extract frequency interval indices
-        min_freq, max_freq = frequency_interval
-        freq_mask = (frequencies >= min_freq) & (frequencies <= max_freq)
-        freq_indices = np.where(freq_mask)[0]
-        
-        if len(freq_indices) == 0:
-            raise ValueError(
-                f"No frequency bins found in interval [{min_freq}, {max_freq}] Hz. "
-                f"Available range: [0, {sampling_rate/2}] Hz"
-            )
+        freq_indices = None
         
         processed_count = 0
         skipped_count = 0
@@ -567,6 +557,17 @@ def process_single_profiles(
                 
                 print(f"Using {num_freq_bins} frequency bins (FFT size: {fft_size})")
                 print(f"Frequency range: [{frequencies[0]:.2f}, {frequencies[-1]:.2f}] Hz")
+                
+                # Extract frequency interval indices (now that frequencies is computed)
+                min_freq, max_freq = frequency_interval
+                freq_mask = (frequencies >= min_freq) & (frequencies <= max_freq)
+                freq_indices = np.where(freq_mask)[0]
+                
+                if len(freq_indices) == 0:
+                    raise ValueError(
+                        f"No frequency bins found in interval [{min_freq}, {max_freq}] Hz. " 
+                        f"Available range: [0, {frequencies[-1]}] Hz"
+                    )
             
             # Check if spectrum size matches
             if num_spectrum_bins != num_freq_bins:
@@ -586,6 +587,11 @@ def process_single_profiles(
                 spectrum = power_density_spectrum[range_idx, :]
                 
                 # Find frequency bin with maximum value within allowable interval
+                # freq_indices should be set by now from the first spectrum
+                if freq_indices is None:
+                    skipped_count += 1
+                    continue
+                
                 spectrum_in_interval = spectrum[freq_indices]
                 if len(spectrum_in_interval) == 0:
                     continue
