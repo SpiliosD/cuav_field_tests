@@ -389,13 +389,41 @@ def create_heatmaps(
                 
                 fig, ax = plt.subplots(figsize=(10, 8))
                 
-                # Create heatmap
-                im = ax.contourf(
-                    azimuth_grid,
-                    elevation_grid,
+                # Create bin edges from centers for pcolormesh
+                # Calculate spacing between bin centers
+                if len(azimuth_grid) > 1:
+                    azimuth_spacing = azimuth_grid[1] - azimuth_grid[0]
+                    azimuth_edges = np.append(
+                        azimuth_grid - azimuth_spacing / 2,
+                        azimuth_grid[-1] + azimuth_spacing / 2
+                    )
+                else:
+                    # Single bin case
+                    azimuth_spacing = 1.0
+                    azimuth_edges = np.array([azimuth_grid[0] - 0.5, azimuth_grid[0] + 0.5])
+                
+                if len(elevation_grid) > 1:
+                    elevation_spacing = elevation_grid[1] - elevation_grid[0]
+                    elevation_edges = np.append(
+                        elevation_grid - elevation_spacing / 2,
+                        elevation_grid[-1] + elevation_spacing / 2
+                    )
+                else:
+                    # Single bin case
+                    elevation_spacing = 1.0
+                    elevation_edges = np.array([elevation_grid[0] - 0.5, elevation_grid[0] + 0.5])
+                
+                # Create meshgrid for edges
+                azimuth_mesh, elevation_mesh = np.meshgrid(azimuth_edges, elevation_edges)
+                
+                # Create heatmap using pcolormesh
+                im = ax.pcolormesh(
+                    azimuth_mesh,
+                    elevation_mesh,
                     value_grid,
-                    levels=50,
                     cmap=colormap,
+                    shading='flat',
+                    edgecolors='none',
                 )
                 
                 # Add colorbar
