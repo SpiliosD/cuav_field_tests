@@ -33,15 +33,17 @@ All paths and parameters are centralized in `config.txt` (simple text file with 
 
 3. Run your scripts - they will automatically load from `config.txt`:
    ```bash
-   # Run all tests to verify project functionality
+   # Run all tests to verify project functionality (database created automatically)
    python main.py --test
    
-   # Generate heatmaps for specific parameters and ranges
+   # Generate heatmaps for specific parameters and ranges (database created automatically)
    python main.py --heatmaps --parameters wind snr --ranges 100 200 300
    
    # Or run the test suite directly
    python total_test.py
    ```
+
+**Note:** The database is automatically created or rebuilt when running `main.py` in either test or heatmaps mode. If a database already exists, it will be replaced with a fresh one containing all filtered matches.
 
 **Configuration File Format:**
 
@@ -70,6 +72,10 @@ The `config.txt` file uses a simple `key=value` format:
 - `starting_range`: Starting range for range-resolved profiles (default: -1400.0 m)
 - `requested_ranges`: Comma-separated list of ranges to visualize (default: "100,200,300")
 - `visualization_output_dir`: Output directory for heatmap images (default: "visualization_output")
+- `run_mode`: Main script execution mode ('test' or 'heatmaps', default: 'test')
+- `heatmap_parameters`: Comma-separated list of parameters for heatmaps (e.g., "wind,snr", default: "wind,peak,spectrum")
+- `heatmap_colormap`: Matplotlib colormap for heatmaps (default: "viridis")
+- `heatmap_format`: Image format for heatmaps (default: "png")
 
 **Configuration Validation:**
 
@@ -281,6 +287,7 @@ The `main.py` script provides two main options:
 python main.py --test
 ```
 This runs the complete test suite (`total_test.py`) to verify project functionality, including:
+- Automatic database creation/rebuild (replaces existing database if present)
 - Spectra parsing
 - Log file reading
 - Processed/raw data matching
@@ -291,10 +298,10 @@ This runs the complete test suite (`total_test.py`) to verify project functional
 
 **2. Generate Heatmaps:**
 ```bash
-# Generate heatmaps for wind and SNR at specific ranges
+# Generate heatmaps for wind and SNR at specific ranges (database created automatically)
 python main.py --heatmaps --parameters wind snr --ranges 100 200 300
 
-# Use default parameters and ranges from config.txt
+# Use default parameters and ranges from config.txt (database created automatically)
 python main.py --heatmaps
 
 # Generate heatmaps for wind only at range 150m
@@ -303,6 +310,16 @@ python main.py --heatmaps --parameters wind --ranges 150
 # Custom output directory and colormap
 python main.py --heatmaps --parameters wind peak --ranges 100 200 --output-dir my_heatmaps --colormap plasma
 ```
+
+**Running from IDE:**
+When running `main.py` directly from an IDE without command-line arguments, set `run_mode` in `config.txt`:
+```txt
+run_mode=test        # Run test suite
+# or
+run_mode=heatmaps    # Generate heatmaps (uses heatmap_parameters from config.txt)
+```
+
+The mode from `config.txt` will be used when no command-line arguments are provided. Command-line arguments (`--test` or `--heatmaps`) always take precedence over the config file.
 
 **Parameter Mapping:**
 - `snr` or `peak` → SNR data from `_Peak.txt`
@@ -324,9 +341,18 @@ python main.py --heatmaps --parameters wind peak --ranges 100 200 --output-dir m
 python main.py --help
 ```
 
+**Heatmap Output:**
+When generating heatmaps, the system:
+- Prints dataset information for each heatmap (number of points, first 10 data points)
+- Saves heatmap images to the output directory (PNG, PDF, SVG, etc.)
+- Displays heatmaps interactively in matplotlib windows (close each window to see the next)
+
 ### Database Storage
 
 The project includes SQLite-based persistent storage for aggregated data. This provides a robust, scalable solution for managing time-series data from CUAV field tests.
+
+**Automatic Database Creation:**
+The database is automatically created or rebuilt when running `main.py` in either test or heatmaps mode. If an existing database is found, it will be replaced with a fresh one containing all filtered matches from the current data sources. This ensures that the database always reflects the most current data configuration.
 
 #### Benefits
 
@@ -363,12 +389,12 @@ All array data tables use `ON DELETE CASCADE` to maintain referential integrity.
 
 #### Configuration
 
-Configure the database path in `config.py`:
-```python
-Config.DATABASE_PATH = "data/cuav_data.db"  # or None to disable
+Configure the database path in `config.txt`:
+```txt
+database_path=data/cuav_data.db  # or null to disable
 ```
 
-The database file will be created automatically when first used. The parent directory will be created if it doesn't exist.
+The database file will be created automatically when first used (when running `main.py` in test or heatmaps mode). The parent directory will be created if it doesn't exist.
 
 #### Query Examples
 
@@ -535,11 +561,47 @@ See `SCHEDULER_SETUP.md` for detailed setup instructions.
 - NumPy >= 1.20.0
 - matplotlib >= 3.5.0 (for visualization)
 - schedule >= 1.2.0 (optional, for better scheduling)
+- reportlab >= 3.6.0 (optional, for PDF documentation generation)
 
-**Install all dependencies:**
+**Install using conda (recommended):**
+```bash
+conda env create -f environment.yml
+conda activate cuav_field_tests
+```
+
+**Or install using pip:**
 ```bash
 pip install -r requirements.txt
 ```
+
+**Note:** `sqlite3` is included in Python's standard library and does not need to be installed separately.
+
+### PDF Documentation
+
+The project includes a script to generate comprehensive PDF documentation describing the project's architecture, data flow, methods, and usage.
+
+**Generate PDF documentation:**
+```bash
+python generate_project_documentation.py
+```
+
+This creates `project_documentation.pdf` in the project root with:
+- Project overview and features
+- System architecture and module descriptions
+- Data flow description
+- Core methods and functions
+- Data processing pipeline details
+- Database storage schema
+- Analysis and visualization capabilities
+- Configuration parameters
+- Usage examples
+
+**Custom output file:**
+```bash
+python generate_project_documentation.py my_documentation.pdf
+```
+
+**Requirements:** `reportlab` library (included in requirements.txt and environment.yml)
 
 ### Contributing / Notes
 
