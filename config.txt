@@ -4,9 +4,9 @@
 # Empty lines are also ignored
 
 # Directory Paths
-processed_root=G:\Raymetrics_Tests\BOMA2025\20250926\Wind
-raw_root=G:\Raymetrics_Tests\BOMA2025\20250926\Spectra\User\20250926\Wind
-log_file=G:\Raymetrics_Tests\BOMA2025\20250926\output97.txt
+processed_root=D:\Raymetrics_Tests\BOMA2025\20250926\Wind
+raw_root=D:\Raymetrics_Tests\BOMA2025\20250926\Spectra\User\20250926\Wind
+log_file=D:\Raymetrics_Tests\BOMA2025\20250926\output97.txt
 output_dir=timestamp_debug_output
 database_path=data/output97.db
 
@@ -47,7 +47,7 @@ visualization_output_dir=visualization_output
 # 'test': Run the complete test suite (total_test.py)
 # 'heatmaps': Generate heatmaps using parameters below
 # 'profiles': Generate single-profile visualizations (Mode 3)
-run_mode=heatmaps
+run_mode=test
 
 # Heatmap Parameters (only used when run_mode='heatmaps')
 # Comma-separated list of parameters: 'wind', 'snr', 'peak', 'spectrum'
@@ -62,11 +62,11 @@ heatmap_format=png
 # FFT size for frequency computation (e.g., 128 for 64 spectrum values)
 profile_fft_size=128
 # Sampling rate in Hz
-profile_sampling_rate=100000.0
+profile_sampling_rate=400000000.0
 # Allowable frequency interval for searching maximum SNR (Hz): "min_freq,max_freq"
-profile_frequency_interval=0,50000
+profile_frequency_interval=20000000,120000000
 # Frequency shift for Doppler lidar equation (Hz)
-profile_frequency_shift=0.0
+profile_frequency_shift=80000000
 # Laser wavelength for Doppler lidar equation (meters)
 profile_laser_wavelength=1.55e-6
 
