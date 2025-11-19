@@ -728,6 +728,8 @@ def create_profile_visualizations(
         ax.set_xlabel("Range (m)", fontsize=12)
         ax.set_ylabel("SNR", fontsize=12)
         ax.set_title("SNR Profiles (All Timestamps)", fontsize=14, fontweight="bold")
+        ax.set_xlim(0, 3000)
+        ax.set_ylim(0, 3)
         ax.grid(True, alpha=0.3)
         
         if output_dir is not None:
@@ -752,6 +754,8 @@ def create_profile_visualizations(
         ax.set_xlabel("Range (m)", fontsize=12)
         ax.set_ylabel("Wind Speed (m/s)", fontsize=12)
         ax.set_title("Wind Profiles (All Timestamps)", fontsize=14, fontweight="bold")
+        ax.set_xlim(0, 3000)
+        ax.set_ylim(-10, 10)
         ax.grid(True, alpha=0.3)
         
         if output_dir is not None:
