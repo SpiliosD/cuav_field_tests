@@ -1021,6 +1021,7 @@ def test_single_profiles():
             stats = db.get_statistics()
             print(f"  Entries with SNR profiles: {stats.get('count_with_snr_profile', 0)}")
             print(f"  Entries with wind profiles: {stats.get('count_with_wind_profile', 0)}")
+            print(f"  Entries with dominant frequency profiles: {stats.get('count_with_dominant_frequency_profile', 0)}")
             
             # Query a sample timestamp to verify profile structure
             records = db.query_timestamp_range(limit=1)
@@ -1029,6 +1030,7 @@ def test_single_profiles():
                 timestamp = sample_record["timestamp"]
                 snr_profile = sample_record.get("snr_profile")
                 wind_profile = sample_record.get("wind_profile")
+                dominant_frequency_profile = sample_record.get("dominant_frequency_profile")
                 
                 if snr_profile is not None:
                     print(f"\n  Sample SNR profile (timestamp {timestamp}):")
@@ -1041,6 +1043,12 @@ def test_single_profiles():
                     print(f"    Shape: {wind_profile.shape}")
                     print(f"    First 5 values: {wind_profile[:5]}")
                     print(f"    Non-NaN count: {(~np.isnan(wind_profile)).sum()}/{len(wind_profile)}")
+                
+                if dominant_frequency_profile is not None:
+                    print(f"\n  Sample dominant frequency profile (timestamp {timestamp}):")
+                    print(f"    Shape: {dominant_frequency_profile.shape}")
+                    print(f"    First 5 values: {dominant_frequency_profile[:5]}")
+                    print(f"    Non-NaN count: {(~np.isnan(dominant_frequency_profile)).sum()}/{len(dominant_frequency_profile)}")
         finally:
             db.close()
         
@@ -1058,6 +1066,8 @@ def test_single_profiles():
             print(f"  ✓ SNR profiles plot: {results['snr_plot_path']}")
         if "wind_plot_path" in results:
             print(f"  ✓ Wind profiles plot: {results['wind_plot_path']}")
+        if "dominant_frequency_plot_path" in results:
+            print(f"  ✓ Dominant frequency profiles plot: {results['dominant_frequency_plot_path']}")
         
         print(f"\n✓ All outputs saved to: {output_subdir}")
         

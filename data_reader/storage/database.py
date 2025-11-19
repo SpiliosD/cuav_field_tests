@@ -169,6 +169,15 @@ class DataDatabase:
                 FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
             )
         """)
+        
+        # Dominant frequency profile table (for Mode 3)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS dominant_frequency_profile (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
 
         # Create indexes for faster queries
         cursor.execute("""
@@ -289,9 +298,10 @@ class DataDatabase:
         timestamp: str | float,
         snr_profile: np.ndarray | None = None,
         wind_profile: np.ndarray | None = None,
+        dominant_frequency_profile: np.ndarray | None = None,
     ) -> None:
         """
-        Insert or update SNR and wind profile data for a single timestamp.
+        Insert or update SNR, wind, and dominant frequency profile data for a single timestamp.
         
         This method is used by Mode 3 to store computed profiles. It only updates
         the profile tables, leaving all other data untouched.
@@ -304,6 +314,8 @@ class DataDatabase:
             SNR profile array (one value per range)
         wind_profile : np.ndarray | None
             Wind profile array (one value per range)
+        dominant_frequency_profile : np.ndarray | None
+            Dominant frequency profile array (one value per range, in Hz)
         """
         if self.connection is None:
             self.connect()
@@ -328,6 +340,15 @@ class DataDatabase:
                 VALUES (?, ?)
                 ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
             """, (ts_float, wind_json))
+        
+        # Insert or update dominant frequency profile
+        if dominant_frequency_profile is not None:
+            freq_json = json.dumps(dominant_frequency_profile.tolist() if isinstance(dominant_frequency_profile, np.ndarray) else dominant_frequency_profile)
+            cursor.execute("""
+                INSERT INTO dominant_frequency_profile (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, freq_json))
         
         self.connection.commit()
 
@@ -422,6 +443,7 @@ class DataDatabase:
             ("power_density_spectrum", "power_density_spectrum"),
             ("snr_profile", "snr_profile"),
             ("wind_profile", "wind_profile"),
+            ("dominant_frequency_profile", "dominant_frequency_profile"),
         ]:
             cursor.execute(f"""
                 SELECT data_json FROM {table_name} WHERE timestamp = ?
@@ -520,6 +542,7 @@ class DataDatabase:
             ("power_density_spectrum", "power_density_spectrum"),
             ("snr_profile", "snr_profile"),
             ("wind_profile", "wind_profile"),
+            ("dominant_frequency_profile", "dominant_frequency_profile"),
         ]:
             cursor.execute(f"SELECT COUNT(*) as count FROM {table_name}")
             stats[f"count_with_{key}"] = cursor.fetchone()["count"]

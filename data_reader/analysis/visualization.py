@@ -578,9 +578,10 @@ def process_single_profiles(
                 skipped_count += 1
                 continue
             
-            # Initialize arrays for SNR and wind profiles
+            # Initialize arrays for SNR, wind, and dominant frequency profiles
             snr_profile = np.full(num_ranges, np.nan)
             wind_profile = np.full(num_ranges, np.nan)
+            dominant_frequency_profile = np.full(num_ranges, np.nan)
             
             # Process each range
             for range_idx in range(num_ranges):
@@ -604,6 +605,9 @@ def process_single_profiles(
                 # Store SNR value
                 snr_profile[range_idx] = max_snr
                 
+                # Store dominant frequency value
+                dominant_frequency_profile[range_idx] = max_frequency
+                
                 # Compute wind speed using coherent Doppler lidar equation
                 # v = laser_wavelength * (dominant_frequency - frequency_shift) / 2
                 # where:
@@ -620,6 +624,7 @@ def process_single_profiles(
                 timestamp=timestamp,
                 snr_profile=snr_profile,
                 wind_profile=wind_profile,
+                dominant_frequency_profile=dominant_frequency_profile,
             )
             
             processed_count += 1
@@ -646,11 +651,12 @@ def create_profile_visualizations(
     save_format: str = "png",
 ) -> dict[str, Any]:
     """
-    Create visualizations of SNR and wind profiles.
+    Create visualizations of SNR, wind, and dominant frequency profiles.
     
-    Generates two plots:
+    Generates three plots:
     1. All SNR profiles (one line per timestamp)
     2. All wind profiles (one line per timestamp)
+    3. All dominant frequency profiles (one line per timestamp)
     
     Parameters
     ----------
@@ -688,12 +694,14 @@ def create_profile_visualizations(
     # Extract profile data
     snr_profiles = []
     wind_profiles = []
+    dominant_frequency_profiles = []
     timestamps = []
     
     for record in records:
         timestamp = record["timestamp"]
         snr_profile = record.get("snr_profile")
         wind_profile = record.get("wind_profile")
+        dominant_frequency_profile = record.get("dominant_frequency_profile")
         
         if snr_profile is not None:
             snr_profiles.append(snr_profile)
@@ -701,8 +709,11 @@ def create_profile_visualizations(
         
         if wind_profile is not None:
             wind_profiles.append(wind_profile)
+        
+        if dominant_frequency_profile is not None:
+            dominant_frequency_profiles.append(dominant_frequency_profile)
     
-    if len(snr_profiles) == 0 and len(wind_profiles) == 0:
+    if len(snr_profiles) == 0 and len(wind_profiles) == 0 and len(dominant_frequency_profiles) == 0:
         print("⚠ No profile data found in database")
         return {}
     
@@ -711,6 +722,8 @@ def create_profile_visualizations(
         num_ranges = len(snr_profiles[0])
     elif len(wind_profiles) > 0:
         num_ranges = len(wind_profiles[0])
+    elif len(dominant_frequency_profiles) > 0:
+        num_ranges = len(dominant_frequency_profiles[0])
     else:
         num_ranges = 0
     
@@ -729,7 +742,7 @@ def create_profile_visualizations(
         ax.set_ylabel("SNR", fontsize=12)
         ax.set_title("SNR Profiles (All Timestamps)", fontsize=14, fontweight="bold")
         ax.set_xlim(0, 3000)
-        ax.set_ylim(0, 3)
+        ax.set_ylim(1, 10)
         ax.grid(True, alpha=0.3)
         
         if output_dir is not None:
@@ -769,6 +782,31 @@ def create_profile_visualizations(
         plt.close()
         results["wind_profiles"] = wind_profiles
         results["wind_ranges"] = ranges
+    
+    # Create dominant frequency profile plot
+    if len(dominant_frequency_profiles) > 0:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        for i, dominant_frequency_profile in enumerate(dominant_frequency_profiles):
+            ax.plot(ranges, dominant_frequency_profile, alpha=0.6, linewidth=0.5)
+        
+        ax.set_xlabel("Range (m)", fontsize=12)
+        ax.set_ylabel("Dominant Frequency (Hz)", fontsize=12)
+        ax.set_title("Dominant Frequency Profiles (All Timestamps)", fontsize=14, fontweight="bold")
+        ax.set_xlim(0, 3000)
+        ax.grid(True, alpha=0.3)
+        
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            filename = output_path / f"dominant_frequency_profiles.{save_format}"
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            print(f"✓ Saved dominant frequency profiles plot: {filename}")
+            results["dominant_frequency_plot_path"] = str(filename)
+        
+        plt.close()
+        results["dominant_frequency_profiles"] = dominant_frequency_profiles
+        results["dominant_frequency_ranges"] = ranges
     
     return results
 
