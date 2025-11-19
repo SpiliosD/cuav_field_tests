@@ -1,0 +1,59 @@
+# CUAV Field Tests Data Reader Configuration
+# Simple text file with key=value pairs
+# Lines starting with # are comments and will be ignored
+# Empty lines are also ignored
+
+# Directory Paths
+processed_root=G:\Raymetrics_Tests\BOMA2025\20250922\Wind
+raw_root=G:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind
+log_file=G:\Raymetrics_Tests\BOMA2025\20250922\output.txt
+output_dir=timestamp_debug_output
+database_path=data/cuav_data.db
+
+# Processing Parameters
+timestamp_tolerance=0.0001
+timestamp_precision=6
+
+# File Patterns
+processed_suffix=_Peak.txt
+raw_file_pattern=spectra_*.txt
+
+# Raw Data Reading Parameters
+raw_spectra_skip_rows=13
+raw_spectra_dtype=float32
+
+# Processed Data Reading Parameters
+processed_timestamp_column=2
+processed_data_start_column=3
+
+# Log File Parameters
+# Note: These refer to column indices in the log file
+# After loading, the file is transposed so columns become rows
+log_azimuth_column=0
+log_elevation_column=1
+log_timestamp_column=2
+
+# Test Parameters
+max_test_entries=10
+
+# Visualization Parameters
+range_step=48.0
+starting_range=-1440.0
+requested_ranges=48,96,144
+visualization_output_dir=visualization_output
+
+# Main Script Execution Mode
+# Options: 'test' or 'heatmaps'
+# 'test': Run the complete test suite (total_test.py)
+# 'heatmaps': Generate heatmaps using parameters below
+run_mode=test
+
+# Heatmap Parameters (only used when run_mode='heatmaps')
+# Comma-separated list of parameters: 'wind', 'snr', 'peak', 'spectrum'
+# Examples: "wind,snr" or "wind,peak,spectrum"
+heatmap_parameters=wind,snr
+
+# Heatmap visualization settings
+heatmap_colormap=viridis
+heatmap_format=png
+

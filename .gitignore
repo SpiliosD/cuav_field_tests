@@ -139,8 +139,6 @@ sandbox/
 
 # Configuration (user-specific)
 config.py
-config.yaml
-config.txt
 
 # Database files
 *.db

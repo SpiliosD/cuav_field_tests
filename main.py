@@ -15,11 +15,17 @@ Usage:
     python main.py --heatmaps
 """
 
+# Print immediately when module is loaded (before any imports)
+import sys
+print(">>> main.py module loading...", flush=True, file=sys.stderr)
+
 from __future__ import annotations
 
 import argparse
-import sys
+import os
 from pathlib import Path
+
+print(">>> Imports starting...", flush=True, file=sys.stderr)
 
 # Add project root to path if running directly
 project_root = Path(__file__).resolve().parent
@@ -27,8 +33,27 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 # Load configuration from config.txt
-from config import Config
-from data_reader import create_heatmaps
+print(">>> Importing config module...", flush=True, file=sys.stderr)
+try:
+    from config import Config
+    print(">>> ✓ Config module imported successfully", flush=True, file=sys.stderr)
+except Exception as e:
+    print(f">>> ✗ ERROR importing config: {e}", flush=True, file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+
+print(">>> Importing data_reader module...", flush=True, file=sys.stderr)
+try:
+    from data_reader import create_heatmaps
+    print(">>> ✓ data_reader module imported successfully", flush=True, file=sys.stderr)
+except Exception as e:
+    print(f">>> ✗ ERROR importing data_reader: {e}", flush=True, file=sys.stderr)
+    import traceback
+    traceback.print_exc(file=sys.stderr)
+    sys.exit(1)
+
+print(">>> All module imports completed", flush=True, file=sys.stderr)
 
 # Map user-friendly parameter names to database parameter names
 PARAMETER_ALIASES = {
@@ -75,10 +100,13 @@ def normalize_parameter(param: str) -> str:
 
 def run_tests():
     """Run the complete test suite from total_test.py."""
-    print("=" * 70)
-    print("Running CUAV Field Tests - Test Suite")
-    print("=" * 70)
-    print()
+    import sys
+    
+    # Force flush to ensure output appears immediately
+    print("=" * 70, flush=True)
+    print("Running CUAV Field Tests - Test Suite", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
     
     # Import and run total_test
     import total_test
@@ -114,10 +142,12 @@ def generate_heatmaps(
     save_format : str
         Image format to save (default: 'png').
     """
-    print("=" * 70)
-    print("Generating Heatmaps")
-    print("=" * 70)
-    print()
+    import sys
+    
+    print("=" * 70, flush=True)
+    print("Generating Heatmaps", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
     
     # Load configuration
     Config.load_from_file(silent=False)
@@ -232,10 +262,14 @@ def main():
     2. Config file (run_mode in config.txt) - fallback for IDE execution
     3. Default to 'test' mode if neither specified
     """
-    parser = argparse.ArgumentParser(
-        description="CUAV Field Tests Data Reader - Main Entry Point",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
+    print(">>> Entering main() function", flush=True, file=sys.stderr)
+    
+    try:
+        print(">>> Creating argument parser...", flush=True, file=sys.stderr)
+        parser = argparse.ArgumentParser(
+            description="CUAV Field Tests Data Reader - Main Entry Point",
+            formatter_class=argparse.RawDescriptionHelpFormatter,
+            epilog="""
 Examples:
   # Run from config.txt (set run_mode in config.txt)
   python main.py
@@ -255,132 +289,192 @@ Note:
   - 'spectrum' refers to spectrum data from _Spectrum.txt
   - When running from IDE without arguments, set 'run_mode' in config.txt
         """,
-    )
-    
-    # Create mutually exclusive group for main actions (optional now)
-    action_group = parser.add_mutually_exclusive_group(required=False)
-    
-    action_group.add_argument(
-        "--test",
-        action="store_true",
-        help="Run the complete test suite (total_test.py). Overrides config.txt run_mode.",
-    )
-    
-    action_group.add_argument(
-        "--heatmaps",
-        action="store_true",
-        help="Generate heatmaps for specified parameters at specified ranges. Overrides config.txt run_mode.",
-    )
-    
-    # Heatmap-specific arguments
-    parser.add_argument(
-        "--parameters",
-        "-p",
-        nargs="+",
-        help="Parameters to visualize. Options: 'snr' (or 'peak'), 'wind', 'spectrum'. "
-             "Default: from config.txt (heatmap_parameters)",
-    )
-    
-    parser.add_argument(
-        "--ranges",
-        "-r",
-        type=str,
-        help="Ranges in meters to visualize. Can be comma-separated or space-separated. "
-             "Example: '100,200,300' or '100 200 300'. "
-             "Default: from config.txt (requested_ranges)",
-    )
-    
-    parser.add_argument(
-        "--output-dir",
-        "-o",
-        type=Path,
-        help="Output directory for heatmap images. Default: from config.txt",
-    )
-    
-    parser.add_argument(
-        "--colormap",
-        "-c",
-        type=str,
-        help="Matplotlib colormap name. Default: from config.txt (heatmap_colormap). "
-             "Options: viridis, plasma, inferno, magma, coolwarm, etc.",
-    )
-    
-    parser.add_argument(
-        "--format",
-        "-f",
-        type=str,
-        choices=["png", "pdf", "svg", "jpg", "jpeg"],
-        help="Image format to save. Default: from config.txt (heatmap_format)",
-    )
-    
-    parser.add_argument(
-        "--config",
-        type=Path,
-        help="Path to config.txt file (default: config.txt in project root)",
-    )
-    
-    args = parser.parse_args()
-    
-    # Load configuration from file
-    if args.config:
-        Config.load_from_file(args.config, silent=False)
-    else:
-        Config.load_from_file(silent=False)
-    
-    # Determine execution mode (command-line takes precedence over config)
-    if args.test:
-        run_mode = "test"
-    elif args.heatmaps:
-        run_mode = "heatmaps"
-    else:
-        # Use config file mode
-        run_mode = Config.RUN_MODE.lower().strip()
-        if run_mode not in ("test", "heatmaps"):
-            print(f"⚠ WARNING: Invalid run_mode '{run_mode}' in config.txt. Valid options: 'test', 'heatmaps'")
-            print(f"  Defaulting to 'test' mode.")
-            run_mode = "test"
-    
-    # Execute requested action
-    if run_mode == "test":
-        run_tests()
-    elif run_mode == "heatmaps":
-        # Get parameters from command-line or config
-        if args.parameters:
-            parameters = args.parameters
-        else:
-            # Parse from config
-            parameters = Config.get_heatmap_parameters()
-            if not parameters:
-                # Default if nothing specified
-                parameters = ["wind", "peak", "spectrum"]
-                print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
-        
-        # Get ranges from command-line or config
-        if args.ranges:
-            try:
-                ranges_list = parse_ranges(args.ranges)
-            except ValueError as e:
-                print(f"✗ ERROR: Invalid ranges format: {e}")
-                print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
-                sys.exit(1)
-        else:
-            ranges_list = None  # Will use config default in generate_heatmaps()
-        
-        # Get other options from command-line or config
-        colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
-        save_format = args.format if args.format else Config.HEATMAP_FORMAT
-        
-        success = generate_heatmaps(
-            parameters=parameters,
-            ranges=ranges_list,
-            output_dir=args.output_dir,
-            colormap=colormap,
-            save_format=save_format,
         )
         
-        if not success:
-            sys.exit(1)
+        # Create mutually exclusive group for main actions (optional now)
+        action_group = parser.add_mutually_exclusive_group(required=False)
+        
+        action_group.add_argument(
+            "--test",
+            action="store_true",
+            help="Run the complete test suite (total_test.py). Overrides config.txt run_mode.",
+        )
+        
+        action_group.add_argument(
+            "--heatmaps",
+            action="store_true",
+            help="Generate heatmaps for specified parameters at specified ranges. Overrides config.txt run_mode.",
+        )
+        
+        # Heatmap-specific arguments
+        parser.add_argument(
+            "--parameters",
+            "-p",
+            nargs="+",
+            help="Parameters to visualize. Options: 'snr' (or 'peak'), 'wind', 'spectrum'. "
+                 "Default: from config.txt (heatmap_parameters)",
+        )
+        
+        parser.add_argument(
+            "--ranges",
+            "-r",
+            type=str,
+            help="Ranges in meters to visualize. Can be comma-separated or space-separated. "
+                 "Example: '100,200,300' or '100 200 300'. "
+                 "Default: from config.txt (requested_ranges)",
+        )
+        
+        parser.add_argument(
+            "--output-dir",
+            "-o",
+            type=Path,
+            help="Output directory for heatmap images. Default: from config.txt",
+        )
+        
+        parser.add_argument(
+            "--colormap",
+            "-c",
+            type=str,
+            help="Matplotlib colormap name. Default: from config.txt (heatmap_colormap). "
+                 "Options: viridis, plasma, inferno, magma, coolwarm, etc.",
+        )
+        
+        parser.add_argument(
+            "--format",
+            "-f",
+            type=str,
+            choices=["png", "pdf", "svg", "jpg", "jpeg"],
+            help="Image format to save. Default: from config.txt (heatmap_format)",
+        )
+        
+        parser.add_argument(
+            "--config",
+            type=Path,
+            help="Path to config.txt file (default: config.txt in project root)",
+        )
+        
+        print("Parsing command-line arguments...", flush=True)
+        args = parser.parse_args()
+        print(f"Arguments parsed: test={args.test}, heatmaps={args.heatmaps}", flush=True)
+        
+        # Load configuration from file
+        print("Loading configuration from config.txt...", flush=True)
+        if args.config:
+            Config.load_from_file(args.config, silent=False)
+        else:
+            Config.load_from_file(silent=False)
+        
+        # Determine execution mode (command-line takes precedence over config)
+        if args.test:
+            run_mode = "test"
+            print(">>> Running in 'test' mode (from command-line argument)", flush=True, file=sys.stderr)
+            print(flush=True)
+        elif args.heatmaps:
+            run_mode = "heatmaps"
+            print(">>> Running in 'heatmaps' mode (from command-line argument)", flush=True, file=sys.stderr)
+            print(flush=True)
+        else:
+            # Use config file mode
+            run_mode = Config.RUN_MODE.lower().strip()
+            if run_mode not in ("test", "heatmaps"):
+                print(f">>> ⚠ WARNING: Invalid run_mode '{run_mode}' in config.txt. Valid options: 'test', 'heatmaps'", flush=True, file=sys.stderr)
+                print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
+                run_mode = "test"
+            
+            print(f">>> Running in '{run_mode}' mode (from config.txt: run_mode={Config.RUN_MODE})", flush=True, file=sys.stderr)
+            print(flush=True)
+        
+        # Execute requested action
+        print(f">>> Executing {run_mode} mode...", flush=True, file=sys.stderr)
+        if run_mode == "test":
+            print(">>> Calling run_tests()...", flush=True, file=sys.stderr)
+            run_tests()
+        elif run_mode == "heatmaps":
+            # Get parameters from command-line or config
+            if args.parameters:
+                parameters = args.parameters
+            else:
+                # Parse from config
+                parameters = Config.get_heatmap_parameters()
+                if not parameters:
+                    # Default if nothing specified
+                    parameters = ["wind", "peak", "spectrum"]
+                    print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
+            
+            # Get ranges from command-line or config
+            if args.ranges:
+                try:
+                    ranges_list = parse_ranges(args.ranges)
+                except ValueError as e:
+                    print(f"✗ ERROR: Invalid ranges format: {e}")
+                    print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
+                    sys.exit(1)
+            else:
+                ranges_list = None  # Will use config default in generate_heatmaps()
+            
+            # Get other options from command-line or config
+            colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
+            save_format = args.format if args.format else Config.HEATMAP_FORMAT
+            
+            success = generate_heatmaps(
+                parameters=parameters,
+                ranges=ranges_list,
+                output_dir=args.output_dir,
+                colormap=colormap,
+                save_format=save_format,
+            )
+            
+            if not success:
+                sys.exit(1)
+        
+    except KeyboardInterrupt:
+        print("\n⚠ Interrupted by user")
+        sys.exit(1)
+    except Exception as e:
+        print(f"\n✗ ERROR: Unexpected error occurred: {e}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
-    main()
+    import sys
+    
+    # Force unbuffered output
+    sys.stdout = sys.__stdout__  # Ensure we're using the real stdout
+    sys.stderr = sys.__stderr__  # Ensure we're using the real stderr
+    
+    # Ensure stdout is unbuffered for immediate output
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except (AttributeError, ValueError):
+        # Fallback for older Python versions or if reconfigure fails
+        import os
+        os.environ['PYTHONUNBUFFERED'] = '1'
+    
+    # Print startup message to confirm script is running
+    print("=" * 70, flush=True)
+    print("CUAV Field Tests - Main Script Starting", flush=True)
+    print("=" * 70, flush=True)
+    print(f"Python version: {sys.version}", flush=True)
+    print(f"Script path: {__file__}", flush=True)
+    print(f"Working directory: {os.getcwd()}", flush=True)
+    print(f"sys.argv: {sys.argv}", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
+    
+    try:
+        main()
+        print("\n" + "=" * 70, flush=True)
+        print("✓ Script completed successfully.", flush=True)
+        print("=" * 70, flush=True)
+    except KeyboardInterrupt:
+        print("\n⚠ Interrupted by user", flush=True)
+        sys.exit(1)
+    except Exception as e:
+        print("\n" + "=" * 70, flush=True)
+        print(f"✗ FATAL ERROR: {e}", flush=True, file=sys.stderr)
+        print("=" * 70, flush=True)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)
