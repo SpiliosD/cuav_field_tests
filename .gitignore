@@ -137,3 +137,14 @@ Thumbs.db
 sandbox/
 *.txt.backup
 
+# Configuration (user-specific)
+config.py
+config.yaml
+config.txt
+
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+data/
+

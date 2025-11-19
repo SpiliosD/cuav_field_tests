@@ -10,25 +10,75 @@ It focuses on four main workflows:
 
 ### Configuration
 
-All paths and parameters are centralized in `config.py`. To customize:
+All paths and parameters are centralized in `config.txt` (simple text file with key=value pairs). This makes it easy to configure without editing Python code.
 
-1. Copy `config.example.py` to `config.py`:
+**Setup:**
+
+1. Copy the example config file:
    ```bash
-   cp config.example.py config.py
+   cp config.txt.example config.txt
    ```
 
-2. Edit `config.py` with your paths:
-   ```python
-   Config.PROCESSED_ROOT = r"G:\Your\Path\To\Processed\Data"
-   Config.RAW_ROOT = r"G:\Your\Path\To\Raw\Data"
-   Config.LOG_FILE = r"G:\Your\Path\To\output.txt"
+2. Edit `config.txt` with your paths:
+   ```txt
+   # Directory Paths
+   processed_root=G:\Your\Path\To\Processed\Data
+   raw_root=G:\Your\Path\To\Raw\Data
+   log_file=G:\Your\Path\To\output.txt
+   database_path=data/cuav_data.db
+   
+   # Processing Parameters
+   timestamp_tolerance=0.0001
    ```
 
-3. All scripts will automatically use these settings.
+3. Run your scripts - they will automatically load from `config.txt`:
+   ```bash
+   # Run all tests to verify project functionality
+   python main.py --test
+   
+   # Generate heatmaps for specific parameters and ranges
+   python main.py --heatmaps --parameters wind snr --ranges 100 200 300
+   
+   # Or run the test suite directly
+   python total_test.py
+   ```
 
-You can also validate your configuration:
+**Configuration File Format:**
+
+The `config.txt` file uses a simple `key=value` format:
+- Lines starting with `#` are comments and ignored
+- Empty lines are ignored
+- Each parameter is on its own line: `key=value`
+- Paths can include spaces (no quotes needed, but quotes are stripped if present)
+
+**Available Configuration Parameters:**
+
+- `processed_root`: Root directory containing processed data files
+- `raw_root`: Root directory containing raw spectra files
+- `log_file`: Path to the log file (output.txt)
+- `output_dir`: Output directory for debug files
+- `database_path`: Database file path (or `null` to disable)
+- `timestamp_tolerance`: Tolerance for timestamp matching (default: 0.0001)
+- `timestamp_precision`: Decimal places for timestamp normalization (default: 6)
+- `processed_suffix`: Suffix for processed files (default: "_Peak.txt")
+- `raw_file_pattern`: Pattern for raw files (default: "spectra_*.txt")
+- `raw_spectra_skip_rows`: Lines to skip in raw files (default: 13)
+- `processed_timestamp_column`: Column index for timestamps (default: 2)
+- `processed_data_start_column`: Column index where data starts (default: 3)
+- `max_test_entries`: Max entries for testing (default: 10, or `null` for all)
+- `range_step`: Spacing between range bins for visualization (default: 48.0 m)
+- `starting_range`: Starting range for range-resolved profiles (default: -1400.0 m)
+- `requested_ranges`: Comma-separated list of ranges to visualize (default: "100,200,300")
+- `visualization_output_dir`: Output directory for heatmap images (default: "visualization_output")
+
+**Configuration Validation:**
+
+You can validate your configuration:
 ```python
 from config import Config
+
+# Load from file (if not already loaded)
+Config.load_from_file()
 
 # Print current configuration
 Config.print_config()
@@ -50,9 +100,15 @@ data_reader/
 ├── reading/
 │   └── readers.py   # read processed and raw data files
 ├── processing/
-│   └── filters.py   # filter processed arrays by log timestamps
+│   ├── aggregation.py  # aggregate data from multiple sources
+│   ├── filters.py      # filter processed arrays by log timestamps
+│   └── integration.py  # integration with database storage
+├── storage/
+│   └── database.py  # SQLite database for persistent storage
 ├── matching/
 │   └── pairs.py     # traverse trees and align processed/raw timestamps
+├── analysis/
+│   └── visualization.py  # heatmap generation and analysis tools
 └── __init__.py      # re-exports for convenience
 ```
 
@@ -70,7 +126,16 @@ data_reader/
 | `read_raw_spectra_file(path)` | Read raw spectra files (binary .bin or ASCII .txt) |
 | `read_text_data_file(path)` | Read generic text files containing numeric data |
 | `build_timestamp_data_dict(timestamp_path_pairs, processed_root, raw_root, log_file_path)` | Aggregate data from multiple sources (peak, spectrum, wind, raw spectra, azimuth, elevation) into a nested dictionary keyed by timestamps |
+| `build_and_save_to_database(...)` | Build aggregated data and save to database in one step |
+| `load_from_database(db_path, ...)` | Load data from database back into dictionary format |
+| `query_timestamp(timestamp, db_path)` | Query a single timestamp from database |
+| `query_timestamp_range(db_path, start, end, limit)` | Query a range of timestamps from database |
+| `init_database(db_path)` | Initialize a new database with tables |
+| `DataDatabase` | Database class for advanced operations |
 | `filter_processed_array_by_timestamps(array, log_path)` | Keep only processed rows with timestamps present in the log |
+| `create_heatmaps(db_path, range_step, starting_range, requested_ranges, ...)` | Generate heatmaps for range-resolved parameters |
+| `extract_range_values(profile_array, range_step, starting_range, requested_ranges)` | Extract values from range-resolved profile at specific ranges |
+| `aggregate_azimuth_elevation_data(data_records, parameter, ...)` | Aggregate data by azimuth/elevation for visualization |
 
 ### Example Usage
 
@@ -146,6 +211,273 @@ if ts in data_dict:
     print(f"Power density spectrum shape: {entry['power_density_spectrum'].shape if entry['power_density_spectrum'] is not None else None}")
 ```
 
+**Storing data in database:**
+```python
+from data_reader import build_and_save_to_database, query_timestamp, load_from_database
+from config import Config
+
+# Build and save to database in one step
+count = build_and_save_to_database(
+    timestamp_path_pairs,
+    processed_root,
+    raw_root,
+    log_file,
+    db_path=Config.get_database_path(),
+    atol=0.0001,
+)
+print(f"Saved {count} entries to database")
+
+# Query a specific timestamp
+data = query_timestamp("3841395567.560425", Config.get_database_path())
+if data:
+    print(f"Azimuth: {data['azimuth']}")
+    print(f"Peak data shape: {data['peak'].shape if data['peak'] is not None else None}")
+
+# Load a range of timestamps
+data_range = load_from_database(
+    Config.get_database_path(),
+    start_timestamp="3841395567.0",
+    end_timestamp="3841395570.0",
+    limit=100,
+)
+print(f"Loaded {len(data_range)} entries")
+```
+
+**Visualizing data with heatmaps:**
+```python
+from data_reader import create_heatmaps
+from config import Config
+
+# Get visualization parameters from config
+db_path = Config.get_database_path()
+range_step = Config.RANGE_STEP  # 48.0 m
+starting_range = Config.STARTING_RANGE  # -1400.0 m
+requested_ranges = Config.get_requested_ranges()  # [100, 200, 300] m
+output_dir = Config.get_visualization_output_dir_path()
+
+# Generate heatmaps for wind, peak, and spectrum at specified ranges
+results = create_heatmaps(
+    db_path=db_path,
+    range_step=range_step,
+    starting_range=starting_range,
+    requested_ranges=requested_ranges,
+    parameters=["wind", "peak", "spectrum"],
+    output_dir=output_dir,
+    colormap="viridis",
+    save_format="png",
+)
+
+# Results contain gridded data and raw scatter points
+for key, data in results.items():
+    print(f"{data['parameter']} at {data['range']} m: {len(data['azimuth'])} points")
+```
+
+### Main Script Usage
+
+The `main.py` script provides two main options:
+
+**1. Run Tests:**
+```bash
+python main.py --test
+```
+This runs the complete test suite (`total_test.py`) to verify project functionality, including:
+- Spectra parsing
+- Log file reading
+- Processed/raw data matching
+- Filtering by log timestamps
+- Data aggregation
+- Database storage
+- Visualization
+
+**2. Generate Heatmaps:**
+```bash
+# Generate heatmaps for wind and SNR at specific ranges
+python main.py --heatmaps --parameters wind snr --ranges 100 200 300
+
+# Use default parameters and ranges from config.txt
+python main.py --heatmaps
+
+# Generate heatmaps for wind only at range 150m
+python main.py --heatmaps --parameters wind --ranges 150
+
+# Custom output directory and colormap
+python main.py --heatmaps --parameters wind peak --ranges 100 200 --output-dir my_heatmaps --colormap plasma
+```
+
+**Parameter Mapping:**
+- `snr` or `peak` → SNR data from `_Peak.txt`
+- `wind` → Wind data from `_Wind.txt`
+- `spectrum` → Spectrum data from `_Spectrum.txt`
+
+**Available Options:**
+- `--test`: Run the complete test suite
+- `--heatmaps`: Generate heatmaps
+- `--parameters`, `-p`: Parameters to visualize (snr, peak, wind, spectrum)
+- `--ranges`, `-r`: Ranges in meters (comma or space separated, e.g., "100,200,300")
+- `--output-dir`, `-o`: Output directory for heatmap images
+- `--colormap`, `-c`: Matplotlib colormap (default: viridis)
+- `--format`, `-f`: Image format (png, pdf, svg, jpg; default: png)
+- `--config`: Path to config.txt file
+
+**Help:**
+```bash
+python main.py --help
+```
+
+### Database Storage
+
+The project includes SQLite-based persistent storage for aggregated data. This provides a robust, scalable solution for managing time-series data from CUAV field tests.
+
+#### Benefits
+
+- **Persistent storage**: Data survives between program runs, enabling long-term analysis
+- **Efficient queries**: Fast timestamp-based lookups and range queries with indexed access
+- **Scalable**: Handles large datasets efficiently (tested with thousands of timestamps)
+- **Metadata tracking**: Stores source file paths, import dates, and update timestamps
+- **Data integrity**: Foreign key constraints ensure referential integrity
+- **Easy export**: Can export to CSV, JSON, or other formats using standard SQL tools
+- **Concurrent access**: SQLite supports multiple readers simultaneously
+- **No dependencies**: Uses Python's built-in `sqlite3` module
+
+#### Database Schema
+
+The database uses a normalized schema with 5 tables:
+
+**`timestamps` (Primary Table)**
+- `timestamp` (REAL, PRIMARY KEY): Processed timestamp
+- `azimuth` (REAL): Azimuth angle from log file
+- `elevation` (REAL): Elevation angle from log file
+- `source_processed_dir` (TEXT): Source processed directory path
+- `source_raw_dir` (TEXT): Source raw directory path
+- `source_log_file` (TEXT): Source log file path
+- `imported_at` (TIMESTAMP): When the record was first imported
+- `updated_at` (TIMESTAMP): When the record was last updated
+
+**Array Data Tables** (Foreign key to `timestamps.timestamp`)
+- `peak_data`: Stores peak array data as JSON
+- `spectrum_data`: Stores spectrum array data as JSON
+- `wind_data`: Stores wind array data as JSON
+- `power_density_spectrum`: Stores raw spectra data as JSON
+
+All array data tables use `ON DELETE CASCADE` to maintain referential integrity.
+
+#### Configuration
+
+Configure the database path in `config.py`:
+```python
+Config.DATABASE_PATH = "data/cuav_data.db"  # or None to disable
+```
+
+The database file will be created automatically when first used. The parent directory will be created if it doesn't exist.
+
+#### Query Examples
+
+**Get statistics about the database:**
+```python
+from data_reader import init_database
+
+db = init_database("data/cuav_data.db")
+stats = db.get_statistics()
+print(f"Total timestamps: {stats['total_timestamps']}")
+print(f"With peak data: {stats['count_with_peak']}")
+print(f"Timestamp range: {stats['timestamp_range']['min']} to {stats['timestamp_range']['max']}")
+db.close()
+```
+
+**Query specific timestamp:**
+```python
+from data_reader import query_timestamp
+
+data = query_timestamp("3841395567.560425", "data/cuav_data.db")
+if data:
+    print(f"Azimuth: {data['azimuth']}")
+    print(f"Peak data: {data['peak']}")
+```
+
+**Query timestamp range:**
+```python
+from data_reader import query_timestamp_range
+
+# Get all data between two timestamps
+data = query_timestamp_range(
+    "data/cuav_data.db",
+    start_timestamp="3841395567.0",
+    end_timestamp="3841395570.0",
+    limit=100,  # Optional: limit number of results
+)
+```
+
+**Advanced queries using SQL:**
+```python
+import sqlite3
+
+conn = sqlite3.connect("data/cuav_data.db")
+cursor = conn.cursor()
+
+# Find all timestamps with azimuth > 90 degrees
+cursor.execute("""
+    SELECT timestamp, azimuth, elevation 
+    FROM timestamps 
+    WHERE azimuth > 90.0
+    ORDER BY timestamp
+""")
+results = cursor.fetchall()
+
+# Count entries by data availability
+cursor.execute("""
+    SELECT 
+        COUNT(*) as total,
+        COUNT(peak_data.timestamp) as with_peak,
+        COUNT(spectrum_data.timestamp) as with_spectrum
+    FROM timestamps
+    LEFT JOIN peak_data ON timestamps.timestamp = peak_data.timestamp
+    LEFT JOIN spectrum_data ON timestamps.timestamp = spectrum_data.timestamp
+""")
+stats = cursor.fetchone()
+
+conn.close()
+```
+
+#### Performance Considerations
+
+- **Indexing**: The `timestamp` column is automatically indexed (PRIMARY KEY)
+- **Array storage**: Large arrays are stored as JSON strings, which is efficient for SQLite
+- **Batch operations**: Use `build_and_save_to_database()` for bulk inserts (faster than individual inserts)
+- **Connection management**: Use context managers (`with` statement) for automatic connection handling
+
+#### Data Migration and Backup
+
+**Backup the database:**
+```bash
+# Simple file copy (SQLite is a single file)
+cp data/cuav_data.db data/cuav_data_backup.db
+```
+
+**Export to CSV:**
+```python
+import sqlite3
+import csv
+
+conn = sqlite3.connect("data/cuav_data.db")
+cursor = conn.cursor()
+
+cursor.execute("SELECT * FROM timestamps")
+with open("export.csv", "w", newline="") as f:
+    writer = csv.writer(f)
+    writer.writerow([desc[0] for desc in cursor.description])
+    writer.writerows(cursor.fetchall())
+
+conn.close()
+```
+
+#### Best Practices
+
+1. **Regular backups**: SQLite databases are single files - easy to backup
+2. **Use transactions**: The database automatically uses transactions for data integrity
+3. **Close connections**: Always close database connections when done (or use context managers)
+4. **Monitor size**: Large datasets may result in large database files (monitor disk space)
+5. **Index optimization**: The primary key on `timestamp` provides fast lookups automatically
+
 ### Running the Example Script
 
 `data_reader/matching/pairs.py` contains a `__main__` block that demonstrates the matching and filtering flow. Update the paths to your environment and run:
@@ -200,8 +532,14 @@ See `SCHEDULER_SETUP.md` for detailed setup instructions.
 ### Requirements
 
 - Python 3.9+
-- NumPy
-- schedule (optional, for better scheduling - install with `pip install schedule`)
+- NumPy >= 1.20.0
+- matplotlib >= 3.5.0 (for visualization)
+- schedule >= 1.2.0 (optional, for better scheduling)
+
+**Install all dependencies:**
+```bash
+pip install -r requirements.txt
+```
 
 ### Contributing / Notes
 

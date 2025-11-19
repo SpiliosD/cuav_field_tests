@@ -12,11 +12,16 @@ if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 
 from data_reader import (
+    build_and_save_to_database,
     build_timestamp_data_dict,
+    create_heatmaps,
     datetime_to_epoch_seconds,
     filter_matches_by_log_timestamps,
     filter_processed_array_by_timestamps,
+    init_database,
+    load_from_database,
     match_processed_and_raw,
+    query_timestamp,
     read_log_files,
     timestamp_from_spectra_filename,
 )
@@ -565,13 +570,224 @@ def test_aggregation(
         return None
 
 
+def test_database(
+    matches: list[tuple[str, str, str, str]] | None,
+    processed_root: str | Path | None = None,
+    raw_root: str | Path | None = None,
+    log_file_path: str | Path | None = None,
+    db_path: str | Path | None = None,
+):
+    """Test database storage and retrieval."""
+    print("\n" + "=" * 70)
+    print("Testing Database Storage")
+    print("=" * 70)
+
+    if matches is None or len(matches) == 0:
+        print("\nWARNING: No matches provided. Skipping database test.")
+        return None
+
+    if processed_root is None:
+        processed_root = Config.PROCESSED_ROOT
+    if raw_root is None:
+        raw_root = Config.RAW_ROOT
+    if log_file_path is None:
+        log_file_path = Config.LOG_FILE
+    if db_path is None:
+        db_path = Config.get_database_path()
+        if db_path is None:
+            print("\nWARNING: Database path not configured. Skipping database test.")
+            return None
+
+    processed_path = Path(processed_root)
+    raw_path = Path(raw_root)
+    log_path = Path(log_file_path)
+    db_path_obj = Path(db_path)
+
+    if not processed_path.exists():
+        print(f"\nWARNING: Processed root not found: {processed_path}")
+        print("Skipping database test.")
+        return None
+
+    if not raw_path.exists():
+        print(f"\nWARNING: Raw root not found: {raw_path}")
+        print("Skipping database test.")
+        return None
+
+    if not log_path.exists():
+        print(f"\nWARNING: Log file not found: {log_path}")
+        print("Skipping database test.")
+        return None
+
+    try:
+        print(f"\nDatabase path: {db_path_obj}")
+        print(f"Processed root: {processed_path}")
+        print(f"Raw root: {raw_path}")
+        print(f"Log file: {log_path}")
+
+        # Prepare timestamp-path pairs
+        timestamp_path_pairs = []
+        for match in matches[:Config.MAX_TEST_ENTRIES or 10]:  # Limit for testing
+            processed_ts = match[0]
+            raw_file_path = Path(match[3])
+            raw_dir_path = raw_file_path.parent
+            timestamp_path_pairs.append((processed_ts, raw_dir_path))
+
+        print(f"\nBuilding and saving {len(timestamp_path_pairs)} entries to database...")
+
+        # Build and save to database
+        count = build_and_save_to_database(
+            timestamp_path_pairs,
+            processed_root,
+            raw_root,
+            log_file_path,
+            db_path,
+            atol=Config.TIMESTAMP_TOLERANCE,
+        )
+
+        print(f"✓ Successfully saved {count} entries to database")
+
+        # Test database statistics
+        db = init_database(db_path)
+        try:
+            stats = db.get_statistics()
+            print(f"\nDatabase Statistics:")
+            print(f"  Total timestamps: {stats['total_timestamps']}")
+            print(f"  With azimuth: {stats['count_with_azimuth']}")
+            print(f"  With elevation: {stats['count_with_elevation']}")
+            print(f"  With peak data: {stats['count_with_peak']}")
+            print(f"  With spectrum data: {stats['count_with_spectrum']}")
+            print(f"  With wind data: {stats['count_with_wind']}")
+            print(f"  With power density spectrum: {stats['count_with_power_density_spectrum']}")
+            print(f"  Timestamp range: {stats['timestamp_range']['min']:.6f} to {stats['timestamp_range']['max']:.6f}")
+        finally:
+            db.close()
+
+        # Test querying a single timestamp
+        if timestamp_path_pairs:
+            test_ts = timestamp_path_pairs[0][0]
+            print(f"\nTesting query for timestamp: {test_ts}")
+            result = query_timestamp(test_ts, db_path)
+            if result:
+                print(f"  ✓ Found data:")
+                print(f"    Azimuth: {result.get('azimuth')}")
+                print(f"    Elevation: {result.get('elevation')}")
+                print(f"    Peak data: {'Present' if result.get('peak') is not None else 'None'}")
+                print(f"    Spectrum data: {'Present' if result.get('spectrum') is not None else 'None'}")
+                print(f"    Wind data: {'Present' if result.get('wind') is not None else 'None'}")
+                print(f"    Power density spectrum: {'Present' if result.get('power_density_spectrum') is not None else 'None'}")
+            else:
+                print(f"  ✗ No data found")
+
+        # Test loading from database
+        print(f"\nTesting load_from_database (first 3 entries)...")
+        loaded_data = load_from_database(db_path, limit=3)
+        print(f"  ✓ Loaded {len(loaded_data)} entries")
+        if loaded_data:
+            first_ts = list(loaded_data.keys())[0]
+            first_entry = loaded_data[first_ts]
+            print(f"  Sample entry (timestamp {first_ts}):")
+            print(f"    Azimuth: {first_entry.get('azimuth')}")
+            print(f"    Elevation: {first_entry.get('elevation')}")
+            print(f"    Peak shape: {first_entry.get('peak').shape if first_entry.get('peak') is not None else None}")
+
+        # Test range queries
+        if len(timestamp_path_pairs) >= 2:
+            print(f"\nTesting range query...")
+            first_ts = float(timestamp_path_pairs[0][0])
+            last_ts = float(timestamp_path_pairs[-1][0])
+            range_data = load_from_database(
+                db_path,
+                start_timestamp=first_ts,
+                end_timestamp=last_ts,
+                limit=5,
+            )
+            print(f"  ✓ Range query returned {len(range_data)} entries")
+            if range_data:
+                print(f"    Timestamp range in results: {min(float(ts) for ts in range_data.keys()):.6f} to {max(float(ts) for ts in range_data.keys()):.6f}")
+
+        # Test data integrity: verify saved data matches original
+        print(f"\nTesting data integrity...")
+        db = init_database(db_path)
+        try:
+            integrity_errors = []
+            for ts_str, _ in timestamp_path_pairs[:min(5, len(timestamp_path_pairs))]:
+                db_result = db.query_timestamp(ts_str)
+                if db_result is None:
+                    integrity_errors.append(f"Timestamp {ts_str} not found in database")
+                    continue
+                
+                # Verify basic fields
+                if db_result.get("azimuth") is None and db_result.get("elevation") is None:
+                    integrity_errors.append(f"Timestamp {ts_str} missing both azimuth and elevation")
+                
+                # Check if at least one data array exists
+                has_data = any([
+                    db_result.get("peak") is not None,
+                    db_result.get("spectrum") is not None,
+                    db_result.get("wind") is not None,
+                    db_result.get("power_density_spectrum") is not None,
+                ])
+                if not has_data:
+                    integrity_errors.append(f"Timestamp {ts_str} has no data arrays")
+            
+            if integrity_errors:
+                print(f"  ⚠ Found {len(integrity_errors)} integrity issues:")
+                for error in integrity_errors[:3]:  # Show first 3
+                    print(f"    - {error}")
+            else:
+                print(f"  ✓ Data integrity check passed for {min(5, len(timestamp_path_pairs))} entries")
+        finally:
+            db.close()
+
+        # Test database file size
+        if db_path_obj.exists():
+            db_size_mb = db_path_obj.stat().st_size / (1024 * 1024)
+            print(f"\nDatabase file size: {db_size_mb:.2f} MB")
+            print(f"  Average size per entry: {db_size_mb * 1024 * 1024 / max(1, count):.0f} bytes")
+
+        # Test update functionality (re-insert same data)
+        print(f"\nTesting update functionality (re-inserting same data)...")
+        update_count = build_and_save_to_database(
+            timestamp_path_pairs[:min(3, len(timestamp_path_pairs))],
+            processed_root,
+            raw_root,
+            log_file_path,
+            db_path,
+            atol=Config.TIMESTAMP_TOLERANCE,
+        )
+        print(f"  ✓ Updated {update_count} entries (should not create duplicates)")
+        
+        # Verify no duplicates were created
+        db = init_database(db_path)
+        try:
+            final_stats = db.get_statistics()
+            if final_stats['total_timestamps'] == stats['total_timestamps']:
+                print(f"  ✓ No duplicates created (total timestamps unchanged: {final_stats['total_timestamps']})")
+            else:
+                print(f"  ⚠ Timestamp count changed: {stats['total_timestamps']} -> {final_stats['total_timestamps']}")
+        finally:
+            db.close()
+
+        return db_path
+    except Exception as e:
+        print(f"\nERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
+
+
 def main():
     """Main entry point for running all tests."""
     print("\n" + "=" * 70)
     print("Data Reader Test Suite")
     print("=" * 70)
 
-    # Load configuration
+    # Load configuration from YAML file (if available)
+    # Config.load_from_file() is called automatically on import
+    # But we can reload if needed
+    Config.load_from_file()
+    
+    # Print configuration
     Config.print_config()
     
     # Get paths from config
@@ -608,6 +824,17 @@ def main():
         LOG_FILE,
     )
 
+    # Test 6: Database storage
+    db_path = test_database(
+        filtered_matches if filtered_matches else matches,
+        PROCESSED_ROOT,
+        RAW_ROOT,
+        LOG_FILE,
+    )
+
+    # Test 7: Visualization (heatmap generation)
+    test_visualization()
+
     # Summary
     print("\n" + "=" * 70)
     print("Test Summary")
@@ -627,6 +854,73 @@ def main():
     print("=" * 70 + "\n")
 
 
+def test_visualization():
+    """Test heatmap generation from database."""
+    print("=" * 70)
+    print("Testing Visualization - Heatmap Generation")
+    print("=" * 70)
+    
+    # Get database path from config
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("⚠ Database path not configured. Skipping visualization test.")
+        return
+    
+    if not db_path.exists():
+        print(f"⚠ Database not found at {db_path}")
+        print("  Run test_database() first to create the database.")
+        return
+    
+    # Get visualization parameters from config
+    range_step = Config.RANGE_STEP
+    starting_range = Config.STARTING_RANGE
+    requested_ranges = Config.get_requested_ranges()
+    output_dir = Config.get_visualization_output_dir_path()
+    
+    print(f"\nConfiguration:")
+    print(f"  Database: {db_path}")
+    print(f"  Range Step: {range_step} m")
+    print(f"  Starting Range: {starting_range} m")
+    print(f"  Requested Ranges: {requested_ranges} m")
+    print(f"  Output Directory: {output_dir}")
+    
+    if not requested_ranges:
+        print("⚠ No requested ranges configured. Using default: [100, 200, 300]")
+        requested_ranges = [100.0, 200.0, 300.0]
+    
+    try:
+        print("\nGenerating heatmaps...")
+        results = create_heatmaps(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            requested_ranges=requested_ranges,
+            parameters=["wind", "peak", "spectrum"],
+            output_dir=output_dir,
+            colormap="viridis",
+            save_format="png",
+        )
+        
+        print(f"\n✓ Generated {len(results)} heatmaps:")
+        for key, data in results.items():
+            param = data["parameter"]
+            rng = data["range"]
+            n_points = len(data["azimuth"])
+            print(f"  - {param} at {rng} m: {n_points} data points")
+        
+        print(f"\n✓ Heatmaps saved to: {output_dir}")
+        
+    except ImportError as e:
+        print(f"⚠ {e}")
+        print("  Install matplotlib: pip install matplotlib")
+    except Exception as e:
+        print(f"✗ Error generating heatmaps: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("=" * 70 + "\n")
+
+
 if __name__ == "__main__":
     import argparse
 
@@ -641,19 +935,32 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=Path("timestamp_debug_output"),
-        help="Output directory for timestamp debug files (default: timestamp_debug_output)",
+        default=None,
+        help="Output directory for timestamp debug files (default: from config.txt)",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=None,
+        help="Path to config.txt file (default: config.txt in project root)",
     )
 
     args = parser.parse_args()
+
+    # Load configuration from file
+    if args.config:
+        Config.load_from_file(args.config, silent=False)
+    else:
+        Config.load_from_file(silent=False)
 
     if args.debug_timestamps:
         # Get paths from config
         PROCESSED_ROOT = Config.PROCESSED_ROOT
         RAW_ROOT = Config.RAW_ROOT
         LOG_FILE = Config.LOG_FILE
+        OUTPUT_DIR = args.output_dir if args.output_dir else Config.get_output_dir_path()
 
-        extract_and_save_timestamps(PROCESSED_ROOT, RAW_ROOT, LOG_FILE, args.output_dir)
+        extract_and_save_timestamps(PROCESSED_ROOT, RAW_ROOT, LOG_FILE, OUTPUT_DIR)
     else:
         # Run all tests by default
         main()
