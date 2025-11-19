@@ -4,11 +4,12 @@ channels:
   - defaults
 dependencies:
   - python>=3.9
+  # Core dependencies (required)
   - numpy>=1.20.0
   - matplotlib>=3.5.0
-  - pip
-  - pip:
-    - schedule>=1.2.0
-    - tqdm>=4.60.0
-    - reportlab>=3.6.0
+  # Optional dependencies (for enhanced functionality)
+  - schedule>=1.2.0
+  - tqdm>=4.60.0
+  - reportlab>=3.6.0
+  # Note: sqlite3 is included in Python standard library
 
