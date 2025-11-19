@@ -837,6 +837,13 @@ def main():
         LOG_FILE,
     )
 
+    # Test 6.5: Extract and save debug timestamps
+    print("\n" + "=" * 70)
+    print("Extracting and Saving Debug Timestamps")
+    print("=" * 70)
+    extract_and_save_timestamps(PROCESSED_ROOT, RAW_ROOT, LOG_FILE, OUTPUT_DIR)
+    print("=" * 70 + "\n")
+
     # Test 7: Visualization (heatmap generation)
     test_visualization()
     
@@ -883,7 +890,17 @@ def test_visualization():
     range_step = Config.RANGE_STEP
     starting_range = Config.STARTING_RANGE
     requested_ranges = Config.get_requested_ranges()
-    output_dir = Config.get_visualization_output_dir_path()
+    base_output_dir = Config.get_visualization_output_dir_path()
+    
+    # Get logfile basename for output subdirectory (same as Mode 2 in main.py)
+    log_file = Config.get_log_file_path()
+    if log_file is None:
+        logfile_basename = "output"
+    else:
+        logfile_basename = log_file.stem
+    
+    output_dir = base_output_dir / logfile_basename
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     print(f"\nConfiguration:")
     print(f"  Database: {db_path}")
