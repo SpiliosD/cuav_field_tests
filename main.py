@@ -44,15 +44,9 @@ except Exception as e:
     traceback.print_exc(file=sys.stderr)
     sys.exit(1)
 
-print(">>> Importing data_reader module...", flush=True, file=sys.stderr)
-try:
-    from data_reader import create_heatmaps
-    print(">>> ✓ data_reader module imported successfully", flush=True, file=sys.stderr)
-except Exception as e:
-    print(f">>> ✗ ERROR importing data_reader: {e}", flush=True, file=sys.stderr)
-    import traceback
-    traceback.print_exc(file=sys.stderr)
-    sys.exit(1)
+# Delay data_reader import until needed (for heatmaps mode only)
+# This avoids importing visualization modules when running tests
+print(">>> Skipping data_reader import (will import when needed for heatmaps)", flush=True, file=sys.stderr)
 
 print(">>> All module imports completed", flush=True, file=sys.stderr)
 
@@ -101,7 +95,7 @@ def normalize_parameter(param: str) -> str:
 
 def run_tests():
     """Run the complete test suite from total_test.py."""
-    import sys
+    print(">>> Entering run_tests() function", flush=True, file=sys.stderr)
     
     # Force flush to ensure output appears immediately
     print("=" * 70, flush=True)
@@ -110,13 +104,31 @@ def run_tests():
     print(flush=True)
     
     # Import and run total_test
-    import total_test
+    print(">>> Importing total_test module...", flush=True, file=sys.stderr)
+    try:
+        import total_test
+        print(">>> ✓ total_test module imported successfully", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR importing total_test: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return
     
     # Load configuration if not already loaded
+    print(">>> Loading configuration...", flush=True, file=sys.stderr)
     Config.load_from_file(silent=False)
+    print(">>> Configuration loaded", flush=True, file=sys.stderr)
     
     # Run the main test function
-    total_test.main()
+    print(">>> Calling total_test.main()...", flush=True, file=sys.stderr)
+    try:
+        total_test.main()
+        print(">>> total_test.main() completed", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR in total_test.main(): {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        raise
 
 
 def generate_heatmaps(
@@ -143,7 +155,15 @@ def generate_heatmaps(
     save_format : str
         Image format to save (default: 'png').
     """
-    import sys
+    print(">>> Importing create_heatmaps (lazy import)...", flush=True, file=sys.stderr)
+    try:
+        from data_reader import create_heatmaps
+        print(">>> ✓ create_heatmaps imported successfully", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR importing create_heatmaps: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
     
     print("=" * 70, flush=True)
     print("Generating Heatmaps", flush=True)
