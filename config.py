@@ -145,6 +145,18 @@ def _apply_txt_config(config_dict: dict) -> None:
         Config.HEATMAP_COLORMAP = config_dict["heatmap_colormap"]
     if "heatmap_format" in config_dict:
         Config.HEATMAP_FORMAT = config_dict["heatmap_format"]
+    
+    # Single-profile mode parameters
+    if "profile_fft_size" in config_dict:
+        Config.PROFILE_FFT_SIZE = int(config_dict["profile_fft_size"])
+    if "profile_sampling_rate" in config_dict:
+        Config.PROFILE_SAMPLING_RATE = float(config_dict["profile_sampling_rate"])
+    if "profile_frequency_interval" in config_dict:
+        Config.PROFILE_FREQUENCY_INTERVAL = config_dict["profile_frequency_interval"]
+    if "profile_frequency_shift" in config_dict:
+        Config.PROFILE_FREQUENCY_SHIFT = float(config_dict["profile_frequency_shift"])
+    if "profile_laser_wavelength" in config_dict:
+        Config.PROFILE_LASER_WAVELENGTH = float(config_dict["profile_laser_wavelength"])
 
 
 class Config:
@@ -267,9 +279,10 @@ class Config:
     # Main Script Execution Parameters
     # ============================================================================
     
-    # Run mode: 'test' or 'heatmaps'
+    # Run mode: 'test', 'heatmaps', or 'profiles'
     # 'test': Run the complete test suite (total_test.py)
     # 'heatmaps': Generate heatmaps using parameters below
+    # 'profiles': Generate single-profile visualizations (Mode 3)
     RUN_MODE: ClassVar[str] = "test"
     
     # Heatmap parameters (comma-separated list: 'wind', 'snr', 'peak', 'spectrum')
@@ -284,6 +297,27 @@ class Config:
     # Image format for heatmaps (default: 'png')
     # Options: png, pdf, svg, jpg, jpeg
     HEATMAP_FORMAT: ClassVar[str] = "png"
+    
+    # ============================================================================
+    # Single-Profile Mode Parameters (Mode 3)
+    # ============================================================================
+    
+    # FFT size for frequency computation (e.g., 128 for 64 spectrum values)
+    # This is the actual FFT size used, not the number of output bins
+    PROFILE_FFT_SIZE: ClassVar[int] = 128
+    
+    # Sampling rate in Hz for frequency computation
+    PROFILE_SAMPLING_RATE: ClassVar[float] = 100000.0  # 100 kHz default
+    
+    # Allowable frequency interval for searching maximum SNR (Hz)
+    # Format: "min_freq,max_freq" (e.g., "0,50000")
+    PROFILE_FREQUENCY_INTERVAL: ClassVar[str] = "0,50000"
+    
+    # Frequency shift for Doppler lidar equation (Hz)
+    PROFILE_FREQUENCY_SHIFT: ClassVar[float] = 0.0
+    
+    # Laser wavelength for Doppler lidar equation (meters)
+    PROFILE_LASER_WAVELENGTH: ClassVar[float] = 1.55e-6  # 1.55 micrometers default
     
     # ============================================================================
     # Helper Methods
@@ -339,6 +373,21 @@ class Config:
         if not params_str:
             return []
         return [p.strip() for p in params_str.split(",") if p.strip()]
+    
+    @classmethod
+    def get_profile_frequency_interval(cls) -> tuple[float, float]:
+        """Parse profile_frequency_interval string into (min_freq, max_freq) tuple."""
+        interval_str = cls.PROFILE_FREQUENCY_INTERVAL.strip()
+        if not interval_str:
+            return (0.0, float('inf'))
+        try:
+            parts = interval_str.split(",")
+            if len(parts) != 2:
+                raise ValueError("Frequency interval must be in format 'min,max'")
+            return (float(parts[0].strip()), float(parts[1].strip()))
+        except (ValueError, IndexError) as e:
+            print(f"⚠ Warning: Invalid frequency interval format '{interval_str}'. Using default (0, inf)")
+            return (0.0, float('inf'))
     
     @classmethod
     def validate_paths(cls) -> tuple[bool, list[str]]:

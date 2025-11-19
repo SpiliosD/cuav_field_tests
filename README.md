@@ -72,10 +72,15 @@ The `config.txt` file uses a simple `key=value` format:
 - `starting_range`: Starting range for range-resolved profiles (default: -1400.0 m)
 - `requested_ranges`: Comma-separated list of ranges to visualize (default: "100,200,300")
 - `visualization_output_dir`: Output directory for heatmap images (default: "visualization_output")
-- `run_mode`: Main script execution mode ('test' or 'heatmaps', default: 'test')
+- `run_mode`: Main script execution mode ('test', 'heatmaps', or 'profiles', default: 'test')
 - `heatmap_parameters`: Comma-separated list of parameters for heatmaps (e.g., "wind,snr", default: "wind,peak,spectrum")
 - `heatmap_colormap`: Matplotlib colormap for heatmaps (default: "viridis")
 - `heatmap_format`: Image format for heatmaps (default: "png")
+- `profile_fft_size`: FFT size for frequency computation in Mode 3 (default: 128)
+- `profile_sampling_rate`: Sampling rate in Hz for frequency computation in Mode 3 (default: 100000.0)
+- `profile_frequency_interval`: Allowable frequency interval for max SNR search in Mode 3, format "min,max" in Hz (default: "0,50000")
+- `profile_frequency_shift`: Frequency shift for Doppler lidar equation in Mode 3 (default: 0.0 Hz)
+- `profile_laser_wavelength`: Laser wavelength in meters for Doppler lidar equation in Mode 3 (default: 1.55e-6)
 
 **Configuration Validation:**
 
@@ -280,9 +285,9 @@ for key, data in results.items():
 
 ### Main Script Usage
 
-The `main.py` script provides two main options:
+The `main.py` script provides three mutually exclusive modes:
 
-**1. Run Tests:**
+**1. Test Mode (Mode 1):**
 ```bash
 python main.py --test
 ```
@@ -296,7 +301,7 @@ This runs the complete test suite (`total_test.py`) to verify project functional
 - Database storage
 - Visualization
 
-**2. Generate Heatmaps:**
+**2. Heatmap Mode (Mode 2):**
 ```bash
 # Generate heatmaps for wind and SNR at specific ranges (database created automatically)
 python main.py --heatmaps --parameters wind snr --ranges 100 200 300
@@ -311,15 +316,43 @@ python main.py --heatmaps --parameters wind --ranges 150
 python main.py --heatmaps --parameters wind peak --ranges 100 200 --output-dir my_heatmaps --colormap plasma
 ```
 
+**3. Single-Profile Mode (Mode 3):**
+```bash
+# Generate single-profile visualizations (SNR and wind profiles)
+python main.py --profiles
+```
+
+Mode 3 performs the following operations:
+- Processes range-resolved power density spectra for each timestamp
+- Computes frequencies from FFT size and sampling rate (specified in config.txt)
+- For each range, finds the frequency at which maximum SNR occurs (within allowable frequency interval)
+- Computes wind speed using the coherent Doppler lidar equation: `v = laser_wavelength * (dominant_frequency - frequency_shift) / 2` (result in m/s)
+- Stores SNR and wind profiles in database (named after logfile, excluding extension)
+- Generates two visualizations:
+  - One plot containing all SNR profiles (one line per timestamp)
+  - One plot containing all wind profiles (one line per timestamp)
+
+**Output Directory Structure:**
+Both Mode 2 (heatmaps) and Mode 3 (profiles) outputs are saved in subdirectories named after the logfile (without extension) inside `visualization_output`:
+```
+visualization_output/
+  <logfile_basename>/
+    <heatmap files>  (Mode 2)
+    snr_profiles.png  (Mode 3)
+    wind_profiles.png (Mode 3)
+```
+
 **Running from IDE:**
 When running `main.py` directly from an IDE without command-line arguments, set `run_mode` in `config.txt`:
 ```txt
 run_mode=test        # Run test suite
 # or
 run_mode=heatmaps    # Generate heatmaps (uses heatmap_parameters from config.txt)
+# or
+run_mode=profiles    # Generate single-profile visualizations (Mode 3)
 ```
 
-The mode from `config.txt` will be used when no command-line arguments are provided. Command-line arguments (`--test` or `--heatmaps`) always take precedence over the config file.
+The mode from `config.txt` will be used when no command-line arguments are provided. Command-line arguments (`--test`, `--heatmaps`, or `--profiles`) always take precedence over the config file. **Modes are mutually exclusive: only one mode runs at a time.**
 
 **Parameter Mapping:**
 - `snr` or `peak` → SNR data from `_Peak.txt`
@@ -327,12 +360,13 @@ The mode from `config.txt` will be used when no command-line arguments are provi
 - `spectrum` → Spectrum data from `_Spectrum.txt`
 
 **Available Options:**
-- `--test`: Run the complete test suite
-- `--heatmaps`: Generate heatmaps
-- `--parameters`, `-p`: Parameters to visualize (snr, peak, wind, spectrum)
-- `--ranges`, `-r`: Ranges in meters (comma or space separated, e.g., "100,200,300")
-- `--output-dir`, `-o`: Output directory for heatmap images
-- `--colormap`, `-c`: Matplotlib colormap (default: viridis)
+- `--test`: Run the complete test suite (Mode 1)
+- `--heatmaps`: Generate heatmaps (Mode 2)
+- `--profiles`: Generate single-profile visualizations (Mode 3)
+- `--parameters`, `-p`: Parameters to visualize (snr, peak, wind, spectrum) - Mode 2 only
+- `--ranges`, `-r`: Ranges in meters (comma or space separated, e.g., "100,200,300") - Mode 2 only
+- `--output-dir`, `-o`: Output directory for visualization images
+- `--colormap`, `-c`: Matplotlib colormap (default: viridis) - Mode 2 only
 - `--format`, `-f`: Image format (png, pdf, svg, jpg; default: png)
 - `--config`: Path to config.txt file
 
@@ -384,6 +418,8 @@ The database uses a normalized schema with 5 tables:
 - `spectrum_data`: Stores spectrum array data as JSON
 - `wind_data`: Stores wind array data as JSON
 - `power_density_spectrum`: Stores raw spectra data as JSON
+- `snr_profile`: Stores computed SNR profiles as JSON (Mode 3)
+- `wind_profile`: Stores computed wind profiles as JSON (Mode 3)
 
 All array data tables use `ON DELETE CASCADE` to maintain referential integrity.
 

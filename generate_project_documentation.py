@@ -149,6 +149,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "Data aggregation from multiple sources (peak, spectrum, wind, raw spectra)",
         "SQLite database for persistent storage and efficient querying",
         "Range-resolved heatmap visualization for spatial analysis",
+        "Single-profile mode for SNR and wind profile analysis with Doppler lidar processing",
         "Configurable processing parameters via simple text file",
     ]
     for feature in features:
@@ -166,6 +167,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "Store aggregated data in a database for persistent access",
         "Generate heatmaps showing parameter distributions across azimuth/elevation angles",
         "Analyze range-resolved profiles at specific altitudes",
+        "Process power density spectra to compute SNR and wind profiles using Doppler lidar equations",
+        "Visualize temporal evolution of SNR and wind profiles across all timestamps",
     ]
     for use_case in use_cases:
         story.append(Paragraph(f"• {use_case}", body_style))
@@ -219,9 +222,11 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "The <b>analysis</b> module generates visualizations and extracts range-resolved data. "
-        "It provides create_heatmaps() to generate heatmaps for parameters at specific ranges "
-        "and extract_range_values() to extract values from range-resolved profiles.",
+        "The <b>analysis</b> module generates visualizations and extracts range-resolved data. " 
+        "It provides create_heatmaps() to generate heatmaps for parameters at specific ranges, " 
+        "extract_range_values() to extract values from range-resolved profiles, " 
+        "process_single_profiles() to compute SNR and wind profiles from power density spectra, " 
+        "and create_profile_visualizations() to generate profile plots.",
         body_style
     ))
     
@@ -283,8 +288,13 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
          "Save aggregated data to SQLite database with timestamp as primary key. Arrays "
          "are stored as JSON strings."),
         ("<b>7. Visualization:</b>", 
-         "Query database, extract range-resolved values at specific ranges, aggregate by "
+         "Query database, extract range-resolved values at specific ranges, aggregate by " 
          "azimuth/elevation, and generate heatmaps."),
+        ("<b>8. Single-Profile Processing (Mode 3):</b>", 
+         "Process range-resolved power density spectra to compute SNR and wind profiles. " 
+         "For each timestamp, compute frequencies from FFT size and sampling rate, find maximum " 
+         "SNR frequency for each range, compute wind speed using Doppler lidar equation, and " 
+         "store profiles in database."),
     ]
     
     for stage_title, stage_desc in stages:
@@ -338,10 +348,13 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "<b>Analysis Methods:</b> The extract_range_values() function extracts values from "
-        "range-resolved profiles at specific requested ranges. The create_heatmaps() function "
-        "generates heatmaps for parameters at specific ranges, visualizing parameter distributions "
-        "across azimuth and elevation angles.",
+        "<b>Analysis Methods:</b> The extract_range_values() function extracts values from " 
+        "range-resolved profiles at specific requested ranges. The create_heatmaps() function " 
+        "generates heatmaps for parameters at specific ranges, visualizing parameter distributions " 
+        "across azimuth and elevation angles. The process_single_profiles() function processes " 
+        "range-resolved power density spectra to compute SNR and wind profiles using Doppler lidar " 
+        "equations. The create_profile_visualizations() function generates plots of all SNR and wind " 
+        "profiles for temporal analysis.",
         body_style
     ))
     
@@ -427,12 +440,14 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "Four additional tables store array data, each with a timestamp foreign key and a data "
-        "column storing JSON-formatted arrays. The <b>peak_data</b> table stores range-resolved "
-        "peak/SNR data. The <b>spectrum_data</b> table stores range-resolved spectrum data. The "
-        "<b>wind_data</b> table stores range-resolved wind velocity data. The "
-        "<b>power_density_spectrum</b> table stores raw power density spectrum data. All array data "
-        "tables use ON DELETE CASCADE to maintain referential integrity with the timestamps table.",
+        "Six additional tables store array data, each with a timestamp foreign key and a data " 
+        "column storing JSON-formatted arrays. The <b>peak_data</b> table stores range-resolved " 
+        "peak/SNR data. The <b>spectrum_data</b> table stores range-resolved spectrum data. The " 
+        "<b>wind_data</b> table stores range-resolved wind velocity data. The " 
+        "<b>power_density_spectrum</b> table stores raw power density spectrum data. The " 
+        "<b>snr_profile</b> table stores computed SNR profiles from Mode 3 processing. The " 
+        "<b>wind_profile</b> table stores computed wind profiles from Mode 3 processing. All array " 
+        "data tables use ON DELETE CASCADE to maintain referential integrity with the timestamps table.",
         body_style
     ))
     
@@ -510,14 +525,50 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         heading2_style
     ))
     story.append(Paragraph(
-        "The system supports three main parameters for visualization. The <b>wind</b> parameter "
-        "provides wind velocity profiles from _Wind.txt files, representing range-resolved wind "
-        "velocity measurements. The <b>peak</b> parameter (also known as SNR) provides "
-        "signal-to-noise ratio profiles from _Peak.txt files, representing range-resolved SNR "
-        "measurements. The <b>spectrum</b> parameter provides spectral power profiles from "
-        "_Spectrum.txt files, representing range-resolved spectral power measurements. All three "
-        "parameters are range-resolved profiles, meaning each measurement is associated with a "
+        "The system supports three main parameters for visualization. The <b>wind</b> parameter " 
+        "provides wind velocity profiles from _Wind.txt files, representing range-resolved wind " 
+        "velocity measurements. The <b>peak</b> parameter (also known as SNR) provides " 
+        "signal-to-noise ratio profiles from _Peak.txt files, representing range-resolved SNR " 
+        "measurements. The <b>spectrum</b> parameter provides spectral power profiles from " 
+        "_Spectrum.txt files, representing range-resolved spectral power measurements. All three " 
+        "parameters are range-resolved profiles, meaning each measurement is associated with a " 
         "specific altitude or range value.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>7.4 Single-Profile Mode (Mode 3)</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "Mode 3 processes range-resolved power density spectra to compute SNR and wind profiles. " 
+        "The processing pipeline:",
+        body_style
+    ))
+    profile_steps = [
+        "For each timestamp, load range-resolved power density spectra (one spectrum per range)",
+        "Compute frequency array from FFT size and sampling rate (frequencies from 0 to fs/2)",
+        "For each range, find frequency bin with maximum SNR within allowable frequency interval",
+        "Store maximum SNR value as SNR profile value for that range",
+        "Compute wind speed using coherent Doppler lidar equation: v = laser_wavelength * (dominant_frequency - frequency_shift) / 2 (result in m/s)",
+        "Store computed wind speed as wind profile value for that range",
+        "Save SNR and wind profiles to database (only updates profile tables, preserves other data)",
+        "Generate two visualization plots: one with all SNR profiles, one with all wind profiles",
+    ]
+    for i, step in enumerate(profile_steps, 1):
+        story.append(Paragraph(f"{i}. {step}", body_style))
+    
+    story.append(Spacer(1, 0.15 * inch))
+    story.append(Paragraph(
+        "The Doppler lidar equation relates wind speed (v) to dominant frequency (f), frequency shift " 
+        "(f0), and laser wavelength (λ): v = laser_wavelength * (dominant_frequency - frequency_shift) / 2, " 
+        "where dominant_frequency is the frequency at maximum SNR, frequency_shift is typically 0 Hz, " 
+        "and laser_wavelength is typically 1.55 μm. The result is in m/s units.",
+        body_style
+    ))
+    story.append(Paragraph(
+        "Output files are saved in a subdirectory named after the logfile (excluding extension) " 
+        "inside the visualization_output directory.",
         body_style
     ))
     story.append(PageBreak())
@@ -559,8 +610,15 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
             "heatmap_format: Image format (default: png)",
         ]),
         ("<b>Execution Mode:</b>", [
-            "run_mode: Main script mode (test or heatmaps)",
+            "run_mode: Main script mode (test, heatmaps, or profiles)",
             "heatmap_parameters: Comma-separated parameters (e.g., wind,snr)",
+        ]),
+        ("<b>Single-Profile Mode Parameters:</b>", [
+            "profile_fft_size: FFT size for frequency computation (default: 128)",
+            "profile_sampling_rate: Sampling rate in Hz (default: 100000.0)",
+            "profile_frequency_interval: Allowable frequency range \"min,max\" in Hz (default: \"0,50000\")",
+            "profile_frequency_shift: Frequency shift for Doppler equation in Hz (default: 0.0)",
+            "profile_laser_wavelength: Laser wavelength in meters (default: 1.55e-6)",
         ]),
     ]
     
@@ -611,7 +669,26 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "<b>9.3 Programmatic Usage</b>",
+        "<b>9.3 Generating Single Profiles</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "Generate single-profile visualizations (Mode 3):",
+        body_style
+    ))
+    story.append(Paragraph(
+        "<pre>python main.py --profiles</pre>",
+        code_style
+    ))
+    
+    story.append(Paragraph(
+        "This mode processes range-resolved power density spectra, computes SNR and wind profiles " 
+        "using Doppler lidar equations, stores profiles in database, and generates visualization plots.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>9.4 Programmatic Usage</b>",
         heading2_style
     ))
     story.append(Paragraph(
@@ -631,16 +708,47 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         body_style
     ))
     story.append(Paragraph(
-        "<pre>from data_reader import create_heatmaps\n"
-        "\nresults = create_heatmaps(\n"
-        "    db_path='data/cuav_data.db',\n"
-        "    range_step=48.0,\n"
-        "    starting_range=-1400.0,\n"
-        "    requested_ranges=[100, 200, 300],\n"
-        "    parameters=['wind', 'peak'],\n"
-        "    output_dir='visualization_output',\n"
-        "    colormap='viridis',\n"
-        "    save_format='png'\n"
+        "<pre>from data_reader import create_heatmaps\n" 
+        "\nresults = create_heatmaps(\n" 
+        "    db_path='data/cuav_data.db',\n" 
+        "    range_step=48.0,\n" 
+        "    starting_range=-1400.0,\n" 
+        "    requested_ranges=[100, 200, 300],\n" 
+        "    parameters=['wind', 'peak'],\n" 
+        "    output_dir='visualization_output',\n" 
+        "    colormap='viridis',\n" 
+        "    save_format='png'\n" 
+        ")</pre>",
+        code_style
+    ))
+    
+    story.append(Paragraph(
+        "Example for single-profile processing (Mode 3):",
+        body_style
+    ))
+    story.append(Paragraph(
+        "<pre>from data_reader.analysis.visualization import (\n" 
+        "    process_single_profiles,\n" 
+        "    create_profile_visualizations\n" 
+        ")\n" 
+        "\n# Process profiles\n" 
+        "stats = process_single_profiles(\n" 
+        "    db_path='data/cuav_data.db',\n" 
+        "    range_step=48.0,\n" 
+        "    starting_range=-1400.0,\n" 
+        "    fft_size=128,\n" 
+        "    sampling_rate=100000.0,\n" 
+        "    frequency_interval=(0, 50000),\n" 
+        "    frequency_shift=0.0,\n" 
+        "    laser_wavelength=1.55e-6\n" 
+        ")\n" 
+        "\n# Generate visualizations\n" 
+        "results = create_profile_visualizations(\n" 
+        "    db_path='data/cuav_data.db',\n" 
+        "    range_step=48.0,\n" 
+        "    starting_range=-1400.0,\n" 
+        "    output_dir='visualization_output/logfile_name',\n" 
+        "    save_format='png'\n" 
         ")</pre>",
         code_style
     ))
@@ -652,9 +760,9 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     story.append(Paragraph(
         "The CUAV Field Tests Data Reader provides a comprehensive solution for processing, "
         "storing, and analyzing atmospheric measurement data from lidar field tests. The system "
-        "automates the complex task of aligning data from multiple sources, provides efficient "
-        "persistent storage through SQLite, and enables sophisticated spatial analysis through "
-        "range-resolved heatmaps.",
+        "automates the complex task of aligning data from multiple sources, provides efficient " 
+        "persistent storage through SQLite, enables sophisticated spatial analysis through " 
+        "range-resolved heatmaps, and supports advanced Doppler lidar profile processing.",
         body_style
     ))
     story.append(Spacer(1, 0.2 * inch))
@@ -667,6 +775,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "Robust timestamp matching with tolerance-based filtering",
         "Efficient database storage enabling fast queries and long-term data retention",
         "Flexible visualization capabilities for spatial analysis",
+        "Single-profile mode for SNR and wind profile computation using Doppler lidar equations",
         "Simple configuration management through text-based config files",
         "Modular architecture enabling easy extension and maintenance",
     ]

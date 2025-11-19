@@ -43,9 +43,10 @@ requested_ranges=48,96,144,192,240,576,336,384,432,480,528,576,624,672,720,768,8
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode
-# Options: 'test' or 'heatmaps'
+# Options: 'test', 'heatmaps', or 'profiles'
 # 'test': Run the complete test suite (total_test.py)
 # 'heatmaps': Generate heatmaps using parameters below
+# 'profiles': Generate single-profile visualizations (Mode 3)
 run_mode=heatmaps
 
 # Heatmap Parameters (only used when run_mode='heatmaps')
@@ -56,4 +57,16 @@ heatmap_parameters=wind,snr
 # Heatmap visualization settings
 heatmap_colormap=viridis
 heatmap_format=png
+
+# Single-Profile Mode Parameters (only used when run_mode='profiles')
+# FFT size for frequency computation (e.g., 128 for 64 spectrum values)
+profile_fft_size=128
+# Sampling rate in Hz
+profile_sampling_rate=100000.0
+# Allowable frequency interval for searching maximum SNR (Hz): "min_freq,max_freq"
+profile_frequency_interval=0,50000
+# Frequency shift for Doppler lidar equation (Hz)
+profile_frequency_shift=0.0
+# Laser wavelength for Doppler lidar equation (meters)
+profile_laser_wavelength=1.55e-6
 

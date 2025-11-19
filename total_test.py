@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import sys
 from pathlib import Path
+import numpy as np
 
 # Add project root to path if running directly
 project_root = Path(__file__).resolve().parent
@@ -24,6 +25,10 @@ from data_reader import (
     query_timestamp,
     read_log_files,
     timestamp_from_spectra_filename,
+)
+from data_reader.analysis.visualization import (
+    process_single_profiles,
+    create_profile_visualizations,
 )
 from data_reader.parsing.logs import extract_log_timestamps
 from config import Config
@@ -834,6 +839,9 @@ def main():
 
     # Test 7: Visualization (heatmap generation)
     test_visualization()
+    
+    # Test 8: Single-Profile Mode (Mode 3)
+    test_single_profiles()
 
     # Summary
     print("\n" + "=" * 70)
@@ -915,6 +923,132 @@ def test_visualization():
         print("  Install matplotlib: pip install matplotlib")
     except Exception as e:
         print(f"✗ Error generating heatmaps: {e}")
+        import traceback
+        traceback.print_exc()
+    
+    print("=" * 70 + "\n")
+
+
+def test_single_profiles():
+    """Test single-profile mode (Mode 3) processing and visualization."""
+    print("=" * 70)
+    print("Testing Single-Profile Mode (Mode 3)")
+    print("=" * 70)
+    
+    # Get database path from config
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("⚠ Database path not configured. Skipping single-profile test.")
+        return
+    
+    if not db_path.exists():
+        print(f"⚠ Database not found at {db_path}")
+        print("  Run test_database() first to create the database.")
+        return
+    
+    # Get visualization parameters from config
+    range_step = Config.RANGE_STEP
+    starting_range = Config.STARTING_RANGE
+    
+    # Get Mode 3 parameters from config
+    fft_size = Config.PROFILE_FFT_SIZE
+    sampling_rate = Config.PROFILE_SAMPLING_RATE
+    frequency_interval = Config.get_profile_frequency_interval()
+    frequency_shift = Config.PROFILE_FREQUENCY_SHIFT
+    laser_wavelength = Config.PROFILE_LASER_WAVELENGTH
+    output_dir = Config.get_visualization_output_dir_path()
+    
+    # Get logfile basename for output subdirectory
+    log_file = Config.get_log_file_path()
+    if log_file is None:
+        logfile_basename = "output"
+    else:
+        logfile_basename = log_file.stem
+    
+    output_subdir = output_dir / logfile_basename
+    
+    print(f"\nConfiguration:")
+    print(f"  Database: {db_path}")
+    print(f"  Range Step: {range_step} m")
+    print(f"  Starting Range: {starting_range} m")
+    print(f"  FFT Size: {fft_size}")
+    print(f"  Sampling Rate: {sampling_rate} Hz")
+    print(f"  Frequency Interval: [{frequency_interval[0]}, {frequency_interval[1]}] Hz")
+    print(f"  Frequency Shift: {frequency_shift} Hz")
+    print(f"  Laser Wavelength: {laser_wavelength} m")
+    print(f"  Output Directory: {output_subdir}")
+    
+    try:
+        # Step 1: Process profiles
+        print("\nProcessing range-resolved spectra...")
+        processing_stats = process_single_profiles(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            fft_size=fft_size,
+            sampling_rate=sampling_rate,
+            frequency_interval=frequency_interval,
+            frequency_shift=frequency_shift,
+            laser_wavelength=laser_wavelength,
+        )
+        
+        print(f"\n✓ Processing complete:")
+        print(f"  Processed: {processing_stats['processed_count']} timestamps")
+        print(f"  Skipped: {processing_stats['skipped_count']} timestamps")
+        print(f"  Total: {processing_stats['total_count']} timestamps")
+        
+        # Step 2: Verify profiles in database
+        print("\nVerifying profiles in database...")
+        db = init_database(db_path)
+        try:
+            stats = db.get_statistics()
+            print(f"  Entries with SNR profiles: {stats.get('count_with_snr_profile', 0)}")
+            print(f"  Entries with wind profiles: {stats.get('count_with_wind_profile', 0)}")
+            
+            # Query a sample timestamp to verify profile structure
+            records = db.query_timestamp_range(limit=1)
+            if records:
+                sample_record = records[0]
+                timestamp = sample_record["timestamp"]
+                snr_profile = sample_record.get("snr_profile")
+                wind_profile = sample_record.get("wind_profile")
+                
+                if snr_profile is not None:
+                    print(f"\n  Sample SNR profile (timestamp {timestamp}):")
+                    print(f"    Shape: {snr_profile.shape}")
+                    print(f"    First 5 values: {snr_profile[:5]}")
+                    print(f"    Non-NaN count: {(~np.isnan(snr_profile)).sum()}/{len(snr_profile)}")
+                
+                if wind_profile is not None:
+                    print(f"\n  Sample wind profile (timestamp {timestamp}):")
+                    print(f"    Shape: {wind_profile.shape}")
+                    print(f"    First 5 values: {wind_profile[:5]}")
+                    print(f"    Non-NaN count: {(~np.isnan(wind_profile)).sum()}/{len(wind_profile)}")
+        finally:
+            db.close()
+        
+        # Step 3: Generate visualizations
+        print("\nGenerating profile visualizations...")
+        results = create_profile_visualizations(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            output_dir=output_subdir,
+            save_format="png",
+        )
+        
+        if "snr_plot_path" in results:
+            print(f"  ✓ SNR profiles plot: {results['snr_plot_path']}")
+        if "wind_plot_path" in results:
+            print(f"  ✓ Wind profiles plot: {results['wind_plot_path']}")
+        
+        print(f"\n✓ All outputs saved to: {output_subdir}")
+        
+    except ImportError as e:
+        print(f"⚠ {e}")
+        print("  Install matplotlib: pip install matplotlib")
+    except Exception as e:
+        print(f"✗ Error in single-profile mode: {e}")
         import traceback
         traceback.print_exc()
     

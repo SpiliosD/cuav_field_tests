@@ -240,6 +240,21 @@ def run_tests():
         raise
 
 
+def get_logfile_basename() -> str:
+    """
+    Get the basename of the logfile (without extension) for creating output subdirectories.
+    
+    Returns
+    -------
+    str
+        Basename of logfile without extension, or 'output' if logfile not configured
+    """
+    log_file = Config.get_log_file_path()
+    if log_file is None or not log_file.exists():
+        return "output"
+    return log_file.stem
+
+
 def generate_heatmaps(
     parameters: list[str] | None = None,
     ranges: list[float] | None = None,
@@ -321,7 +336,13 @@ def generate_heatmaps(
         parameters_list = [p for p in parameters_list if p not in seen and not seen.add(p)]
     
     if output_dir is None:
-        output_dir = Config.get_visualization_output_dir_path()
+        base_output_dir = Config.get_visualization_output_dir_path()
+        # Create subdirectory named after logfile (without extension)
+        logfile_basename = get_logfile_basename()
+        output_dir = base_output_dir / logfile_basename
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
     
     # Print configuration
     print(f"Configuration:")
@@ -396,6 +417,151 @@ def generate_heatmaps(
         return False
 
 
+def generate_profiles(
+    output_dir: Path | None = None,
+    save_format: str = "png",
+):
+    """
+    Generate single-profile visualizations (Mode 3).
+    
+    This mode:
+    1. Processes range-resolved power density spectra for each timestamp
+    2. Computes frequencies from FFT size and sampling rate
+    3. Finds frequency at maximum SNR for each range
+    4. Computes wind speed using coherent Doppler lidar equation: v = laser_wavelength * (dominant_frequency - frequency_shift) / 2 (result in m/s)
+    5. Stores SNR and wind profiles in database
+    6. Generates visualizations of all SNR and wind profiles
+    
+    Parameters
+    ----------
+    output_dir : Path | None
+        Output directory for profile images. If None, uses default from config.txt.
+    save_format : str
+        Image format to save (default: 'png').
+    """
+    print(">>> Importing profile processing functions (lazy import)...", flush=True, file=sys.stderr)
+    try:
+        from data_reader.analysis.visualization import (
+            process_single_profiles,
+            create_profile_visualizations,
+        )
+        print(">>> ✓ Profile functions imported successfully", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR importing profile functions: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
+    
+    print("=" * 70, flush=True)
+    print("Generating Single Profiles (Mode 3)", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
+    
+    # Load configuration
+    Config.load_from_file(silent=False)
+    
+    # Get database path
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("✗ ERROR: Database path not configured in config.txt", flush=True)
+        return False
+    
+    # Check if database exists, if not create it
+    if not db_path.exists():
+        print("Database does not exist. Creating database first...", flush=True)
+        if not create_or_rebuild_database():
+            print("✗ ERROR: Failed to create database. Cannot generate profiles.", flush=True)
+            return False
+    
+    # Get visualization parameters from config
+    range_step = Config.RANGE_STEP
+    starting_range = Config.STARTING_RANGE
+    
+    # Get Mode 3 parameters from config
+    fft_size = Config.PROFILE_FFT_SIZE
+    sampling_rate = Config.PROFILE_SAMPLING_RATE
+    frequency_interval = Config.get_profile_frequency_interval()
+    frequency_shift = Config.PROFILE_FREQUENCY_SHIFT
+    laser_wavelength = Config.PROFILE_LASER_WAVELENGTH
+    
+    if output_dir is None:
+        base_output_dir = Config.get_visualization_output_dir_path()
+        # Create subdirectory named after logfile (without extension)
+        logfile_basename = get_logfile_basename()
+        output_dir = base_output_dir / logfile_basename
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Print configuration
+    print(f"Configuration:")
+    print(f"  Database: {db_path}")
+    print(f"  Range Step: {range_step} m")
+    print(f"  Starting Range: {starting_range} m")
+    print(f"  FFT Size: {fft_size}")
+    print(f"  Sampling Rate: {sampling_rate} Hz")
+    print(f"  Frequency Interval: [{frequency_interval[0]}, {frequency_interval[1]}] Hz")
+    print(f"  Frequency Shift: {frequency_shift} Hz")
+    print(f"  Laser Wavelength: {laser_wavelength} m")
+    print(f"  Output Directory: {output_dir}")
+    print(f"  Save Format: {save_format}")
+    print()
+    
+    try:
+        # Step 1: Process profiles
+        print("Processing range-resolved spectra...")
+        processing_stats = process_single_profiles(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            fft_size=fft_size,
+            sampling_rate=sampling_rate,
+            frequency_interval=frequency_interval,
+            frequency_shift=frequency_shift,
+            laser_wavelength=laser_wavelength,
+        )
+        
+        print()
+        print(f"Processing complete:")
+        print(f"  Processed: {processing_stats['processed_count']} timestamps")
+        print(f"  Skipped: {processing_stats['skipped_count']} timestamps")
+        print(f"  Total: {processing_stats['total_count']} timestamps")
+        print()
+        
+        # Step 2: Generate visualizations
+        print("Generating profile visualizations...")
+        results = create_profile_visualizations(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            output_dir=output_dir,
+            save_format=save_format,
+        )
+        
+        print()
+        if "snr_plot_path" in results:
+            print(f"✓ SNR profiles plot saved: {results['snr_plot_path']}")
+        if "wind_plot_path" in results:
+            print(f"✓ Wind profiles plot saved: {results['wind_plot_path']}")
+        print()
+        print(f"✓ All outputs saved to: {output_dir}")
+        print()
+        return True
+        
+    except ImportError as e:
+        print(f"✗ ERROR: {e}")
+        print("  Install matplotlib: pip install matplotlib")
+        return False
+    except ValueError as e:
+        print(f"✗ ERROR: {e}")
+        return False
+    except Exception as e:
+        print(f"✗ ERROR: Failed to generate profiles: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def main():
     """
     Main entry point with command-line argument parsing.
@@ -426,11 +592,15 @@ Examples:
   # Generate heatmaps using parameters from config.txt
   python main.py --heatmaps
 
+  # Generate single profiles (Mode 3)
+  python main.py --profiles
+
 Note:
   - 'snr' and 'peak' refer to the same parameter (data from _Peak.txt)
   - 'wind' refers to wind data from _Wind.txt
   - 'spectrum' refers to spectrum data from _Spectrum.txt
   - When running from IDE without arguments, set 'run_mode' in config.txt
+  - Modes are mutually exclusive: only one mode runs at a time
         """,
         )
         
@@ -447,6 +617,12 @@ Note:
             "--heatmaps",
             action="store_true",
             help="Generate heatmaps for specified parameters at specified ranges. Overrides config.txt run_mode.",
+        )
+        
+        action_group.add_argument(
+            "--profiles",
+            action="store_true",
+            help="Generate single-profile visualizations (Mode 3). Overrides config.txt run_mode.",
         )
         
         # Heatmap-specific arguments
@@ -516,11 +692,15 @@ Note:
             run_mode = "heatmaps"
             print(">>> Running in 'heatmaps' mode (from command-line argument)", flush=True, file=sys.stderr)
             print(flush=True)
+        elif args.profiles:
+            run_mode = "profiles"
+            print(">>> Running in 'profiles' mode (from command-line argument)", flush=True, file=sys.stderr)
+            print(flush=True)
         else:
             # Use config file mode
             run_mode = Config.RUN_MODE.lower().strip()
-            if run_mode not in ("test", "heatmaps"):
-                print(f">>> ⚠ WARNING: Invalid run_mode '{run_mode}' in config.txt. Valid options: 'test', 'heatmaps'", flush=True, file=sys.stderr)
+            if run_mode not in ("test", "heatmaps", "profiles"):
+                print(f">>> ⚠ WARNING: Invalid run_mode '{run_mode}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
                 print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
                 run_mode = "test"
             
@@ -532,6 +712,17 @@ Note:
         if run_mode == "test":
             print(">>> Calling run_tests()...", flush=True, file=sys.stderr)
             run_tests()
+        elif run_mode == "profiles":
+            # Get options from command-line or config
+            save_format = args.format if args.format else Config.HEATMAP_FORMAT
+            
+            success = generate_profiles(
+                output_dir=args.output_dir,
+                save_format=save_format,
+            )
+            
+            if not success:
+                sys.exit(1)
         elif run_mode == "heatmaps":
             # Get parameters from command-line or config
             if args.parameters:

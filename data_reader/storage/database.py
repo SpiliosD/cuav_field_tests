@@ -151,6 +151,24 @@ class DataDatabase:
                 FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
             )
         """)
+        
+        # SNR profile table (for Mode 3)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS snr_profile (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
+        
+        # Wind profile table (for Mode 3)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wind_profile (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
 
         # Create indexes for faster queries
         cursor.execute("""
@@ -265,6 +283,53 @@ class DataDatabase:
             """, (ts_float, pds_json))
 
         self.connection.commit()
+    
+    def insert_profile_data(
+        self,
+        timestamp: str | float,
+        snr_profile: np.ndarray | None = None,
+        wind_profile: np.ndarray | None = None,
+    ) -> None:
+        """
+        Insert or update SNR and wind profile data for a single timestamp.
+        
+        This method is used by Mode 3 to store computed profiles. It only updates
+        the profile tables, leaving all other data untouched.
+        
+        Parameters
+        ----------
+        timestamp : str | float
+            Processed timestamp (will be converted to float)
+        snr_profile : np.ndarray | None
+            SNR profile array (one value per range)
+        wind_profile : np.ndarray | None
+            Wind profile array (one value per range)
+        """
+        if self.connection is None:
+            self.connect()
+        
+        cursor = self.connection.cursor()
+        ts_float = float(timestamp)
+        
+        # Insert or update SNR profile
+        if snr_profile is not None:
+            snr_json = json.dumps(snr_profile.tolist() if isinstance(snr_profile, np.ndarray) else snr_profile)
+            cursor.execute("""
+                INSERT INTO snr_profile (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, snr_json))
+        
+        # Insert or update wind profile
+        if wind_profile is not None:
+            wind_json = json.dumps(wind_profile.tolist() if isinstance(wind_profile, np.ndarray) else wind_profile)
+            cursor.execute("""
+                INSERT INTO wind_profile (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, wind_json))
+        
+        self.connection.commit()
 
     def insert_from_dict(
         self,
@@ -355,6 +420,8 @@ class DataDatabase:
             ("spectrum_data", "spectrum"),
             ("wind_data", "wind"),
             ("power_density_spectrum", "power_density_spectrum"),
+            ("snr_profile", "snr_profile"),
+            ("wind_profile", "wind_profile"),
         ]:
             cursor.execute(f"""
                 SELECT data_json FROM {table_name} WHERE timestamp = ?
@@ -451,6 +518,8 @@ class DataDatabase:
             ("spectrum_data", "spectrum"),
             ("wind_data", "wind"),
             ("power_density_spectrum", "power_density_spectrum"),
+            ("snr_profile", "snr_profile"),
+            ("wind_profile", "wind_profile"),
         ]:
             cursor.execute(f"SELECT COUNT(*) as count FROM {table_name}")
             stats[f"count_with_{key}"] = cursor.fetchone()["count"]

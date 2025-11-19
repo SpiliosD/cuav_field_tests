@@ -22,6 +22,8 @@ __all__ = [
     "create_heatmaps",
     "extract_range_values",
     "aggregate_azimuth_elevation_data",
+    "process_single_profiles",
+    "create_profile_visualizations",
 ]
 
 
@@ -444,11 +446,319 @@ def create_heatmaps(
                 plt.savefig(filename, dpi=300, bbox_inches="tight")
                 print(f"✓ Saved heatmap: {filename}")
                 
-                # Show the plot (display interactively)
-                plt.show()
-                
-                # Close figure after showing
+                # Close figure
                 plt.close()
+    
+    return results
+
+
+def process_single_profiles(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    fft_size: int,
+    sampling_rate: float,
+    frequency_interval: tuple[float, float],
+    frequency_shift: float,
+    laser_wavelength: float,
+) -> dict[str, Any]:
+    """
+    Process range-resolved power density spectra to compute SNR and wind profiles.
+    
+    For each timestamp:
+    1. Process range-resolved power density spectra
+    2. Compute frequencies from FFT size and sampling rate
+    3. Find frequency at maximum SNR for each range (within allowable interval)
+    4. Compute wind speed using coherent Doppler lidar equation
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    fft_size : int
+        FFT size used for frequency computation (e.g., 128)
+    sampling_rate : float
+        Sampling rate in Hz
+    frequency_interval : tuple[float, float]
+        (min_freq, max_freq) in Hz - allowable frequency interval for max search
+    frequency_shift : float
+        Frequency shift for Doppler lidar equation (Hz)
+    laser_wavelength : float
+        Laser wavelength in meters
+    
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with processing statistics and results
+    """
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        db.create_tables()  # Ensure tables exist (including new profile tables)
+        
+        # Query all timestamps
+        records = db.query_timestamp_range()
+        
+        print(f"Processing {len(records)} timestamps for single-profile mode...")
+        
+        # Compute frequency array from FFT size and sampling rate
+        # Frequencies go from 0 to sampling_rate/2 (Nyquist frequency)
+        # For a real FFT of size N, we get N/2 + 1 frequency bins
+        # However, sometimes only N/2 bins are stored (excluding DC and Nyquist)
+        # We'll determine the actual number from the first spectrum we encounter
+        num_freq_bins = None
+        frequencies = None
+        
+        # Extract frequency interval indices
+        min_freq, max_freq = frequency_interval
+        freq_mask = (frequencies >= min_freq) & (frequencies <= max_freq)
+        freq_indices = np.where(freq_mask)[0]
+        
+        if len(freq_indices) == 0:
+            raise ValueError(
+                f"No frequency bins found in interval [{min_freq}, {max_freq}] Hz. "
+                f"Available range: [0, {sampling_rate/2}] Hz"
+            )
+        
+        processed_count = 0
+        skipped_count = 0
+        
+        for record in records:
+            timestamp = record["timestamp"]
+            power_density_spectrum = record.get("power_density_spectrum")
+            
+            if power_density_spectrum is None:
+                skipped_count += 1
+                continue
+            
+            # power_density_spectrum shape: (num_ranges, num_freq_bins)
+            # Each row is a spectrum for one range
+            if power_density_spectrum.ndim != 2:
+                print(f"⚠ Warning: Skipping timestamp {timestamp} - invalid spectrum shape")
+                skipped_count += 1
+                continue
+            
+            num_ranges = power_density_spectrum.shape[0]
+            num_spectrum_bins = power_density_spectrum.shape[1]
+            
+            # Initialize frequency array on first valid spectrum
+            if frequencies is None:
+                # Determine actual number of frequency bins from data
+                # For FFT size N, we typically get N/2 + 1 bins, but sometimes only N/2
+                # Use the actual number of bins in the data
+                num_freq_bins = num_spectrum_bins
+                
+                # Compute frequency array
+                # If we have N/2 + 1 bins, frequencies go from 0 to fs/2
+                # If we have N/2 bins, frequencies go from 0 to fs/2 (excluding Nyquist)
+                if num_freq_bins == fft_size // 2 + 1:
+                    # Full FFT output (including DC and Nyquist)
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins)
+                elif num_freq_bins == fft_size // 2:
+                    # Only positive frequencies (excluding Nyquist)
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins, endpoint=False)
+                else:
+                    # Custom case: assume frequencies are evenly spaced from 0 to fs/2
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins)
+                
+                print(f"Using {num_freq_bins} frequency bins (FFT size: {fft_size})")
+                print(f"Frequency range: [{frequencies[0]:.2f}, {frequencies[-1]:.2f}] Hz")
+            
+            # Check if spectrum size matches
+            if num_spectrum_bins != num_freq_bins:
+                print(
+                    f"⚠ Warning: Timestamp {timestamp} - spectrum has {num_spectrum_bins} bins, "
+                    f"expected {num_freq_bins}. Skipping."
+                )
+                skipped_count += 1
+                continue
+            
+            # Initialize arrays for SNR and wind profiles
+            snr_profile = np.full(num_ranges, np.nan)
+            wind_profile = np.full(num_ranges, np.nan)
+            
+            # Process each range
+            for range_idx in range(num_ranges):
+                spectrum = power_density_spectrum[range_idx, :]
+                
+                # Find frequency bin with maximum value within allowable interval
+                spectrum_in_interval = spectrum[freq_indices]
+                if len(spectrum_in_interval) == 0:
+                    continue
+                
+                max_idx_in_interval = np.argmax(spectrum_in_interval)
+                max_freq_idx = freq_indices[max_idx_in_interval]
+                max_snr = spectrum[max_freq_idx]
+                max_frequency = frequencies[max_freq_idx]
+                
+                # Store SNR value
+                snr_profile[range_idx] = max_snr
+                
+                # Compute wind speed using coherent Doppler lidar equation
+                # v = laser_wavelength * (dominant_frequency - frequency_shift) / 2
+                # where:
+                #   v = wind speed (m/s)
+                #   laser_wavelength = laser wavelength (m)
+                #   dominant_frequency = frequency at maximum SNR (Hz)
+                #   frequency_shift = frequency shift (Hz)
+                # Units: (m) * (Hz) / 2 = (m) * (1/s) / 2 = m/s
+                wind_speed = laser_wavelength * (max_frequency - frequency_shift) / 2.0
+                wind_profile[range_idx] = wind_speed
+            
+            # Store profiles in database
+            db.insert_profile_data(
+                timestamp=timestamp,
+                snr_profile=snr_profile,
+                wind_profile=wind_profile,
+            )
+            
+            processed_count += 1
+        
+        print(f"✓ Processed {processed_count} timestamps")
+        if skipped_count > 0:
+            print(f"⚠ Skipped {skipped_count} timestamps (missing or invalid data)")
+        
+        return {
+            "processed_count": processed_count,
+            "skipped_count": skipped_count,
+            "total_count": len(records),
+        }
+    
+    finally:
+        db.close()
+
+
+def create_profile_visualizations(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    output_dir: str | Path | None = None,
+    save_format: str = "png",
+) -> dict[str, Any]:
+    """
+    Create visualizations of SNR and wind profiles.
+    
+    Generates two plots:
+    1. All SNR profiles (one line per timestamp)
+    2. All wind profiles (one line per timestamp)
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    output_dir : str | Path | None
+        Directory to save visualization images. If None, returns data without saving.
+    save_format : str
+        Image format to save ('png', 'pdf', 'svg', etc.)
+    
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing plot data and file paths
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError(
+            "matplotlib is required for visualization. "
+            "Install with: pip install matplotlib"
+        )
+    
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        records = db.query_timestamp_range()
+    finally:
+        db.close()
+    
+    # Extract profile data
+    snr_profiles = []
+    wind_profiles = []
+    timestamps = []
+    
+    for record in records:
+        timestamp = record["timestamp"]
+        snr_profile = record.get("snr_profile")
+        wind_profile = record.get("wind_profile")
+        
+        if snr_profile is not None:
+            snr_profiles.append(snr_profile)
+            timestamps.append(timestamp)
+        
+        if wind_profile is not None:
+            wind_profiles.append(wind_profile)
+    
+    if len(snr_profiles) == 0 and len(wind_profiles) == 0:
+        print("⚠ No profile data found in database")
+        return {}
+    
+    # Compute range array
+    if len(snr_profiles) > 0:
+        num_ranges = len(snr_profiles[0])
+    elif len(wind_profiles) > 0:
+        num_ranges = len(wind_profiles[0])
+    else:
+        num_ranges = 0
+    
+    ranges = np.array([starting_range + i * range_step for i in range(num_ranges)])
+    
+    results = {}
+    
+    # Create SNR profile plot
+    if len(snr_profiles) > 0:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        for i, snr_profile in enumerate(snr_profiles):
+            ax.plot(ranges, snr_profile, alpha=0.6, linewidth=0.5)
+        
+        ax.set_xlabel("Range (m)", fontsize=12)
+        ax.set_ylabel("SNR", fontsize=12)
+        ax.set_title("SNR Profiles (All Timestamps)", fontsize=14, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            filename = output_path / f"snr_profiles.{save_format}"
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            print(f"✓ Saved SNR profiles plot: {filename}")
+            results["snr_plot_path"] = str(filename)
+        
+        plt.close()
+        results["snr_profiles"] = snr_profiles
+        results["snr_ranges"] = ranges
+    
+    # Create wind profile plot
+    if len(wind_profiles) > 0:
+        fig, ax = plt.subplots(figsize=(10, 8))
+        
+        for i, wind_profile in enumerate(wind_profiles):
+            ax.plot(ranges, wind_profile, alpha=0.6, linewidth=0.5)
+        
+        ax.set_xlabel("Range (m)", fontsize=12)
+        ax.set_ylabel("Wind Speed (m/s)", fontsize=12)
+        ax.set_title("Wind Profiles (All Timestamps)", fontsize=14, fontweight="bold")
+        ax.grid(True, alpha=0.3)
+        
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            filename = output_path / f"wind_profiles.{save_format}"
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            print(f"✓ Saved wind profiles plot: {filename}")
+            results["wind_plot_path"] = str(filename)
+        
+        plt.close()
+        results["wind_profiles"] = wind_profiles
+        results["wind_ranges"] = ranges
     
     return results
 
