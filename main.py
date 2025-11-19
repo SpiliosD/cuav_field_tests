@@ -16,10 +16,11 @@ Usage:
 """
 
 # Print immediately when module is loaded (before any imports)
-import sys
-print(">>> main.py module loading...", flush=True, file=sys.stderr)
-
 from __future__ import annotations
+
+import sys
+
+print(">>> main.py module loading...", flush=True, file=sys.stderr)
 
 import argparse
 import os
