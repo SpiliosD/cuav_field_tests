@@ -93,9 +93,118 @@ def normalize_parameter(param: str) -> str:
     return param_lower
 
 
+def create_or_rebuild_database() -> bool:
+    """
+    Create or rebuild the database from processed and raw data.
+    
+    This function:
+    1. Matches processed and raw data files
+    2. Filters matches by log timestamps
+    3. Deletes existing database if it exists
+    4. Creates a new database with all filtered matches
+    
+    Returns
+    -------
+    bool
+        True if database was created successfully, False otherwise
+    """
+    print(">>> Creating/rebuilding database...", flush=True, file=sys.stderr)
+    
+    try:
+        # Import required functions
+        from data_reader import (
+            build_and_save_to_database,
+            filter_matches_by_log_timestamps,
+            match_processed_and_raw,
+        )
+        
+        # Get paths from config
+        processed_root = Config.get_processed_root_path()
+        raw_root = Config.get_raw_root_path()
+        log_file = Config.get_log_file_path()
+        db_path = Config.get_database_path()
+        
+        if db_path is None:
+            print("✗ ERROR: Database path not configured in config.txt", flush=True)
+            return False
+        
+        # Validate paths
+        if not processed_root.exists():
+            print(f"✗ ERROR: Processed root not found: {processed_root}", flush=True)
+            return False
+        
+        if not raw_root.exists():
+            print(f"✗ ERROR: Raw root not found: {raw_root}", flush=True)
+            return False
+        
+        if not log_file.exists():
+            print(f"✗ ERROR: Log file not found: {log_file}", flush=True)
+            return False
+        
+        print(f"  Processed root: {processed_root}", flush=True)
+        print(f"  Raw root: {raw_root}", flush=True)
+        print(f"  Log file: {log_file}", flush=True)
+        print(f"  Database: {db_path}", flush=True)
+        
+        # Match processed and raw data
+        print("  Matching processed and raw files...", flush=True)
+        matches = match_processed_and_raw(processed_root, raw_root)
+        print(f"  ✓ Found {len(matches)} initial matches", flush=True)
+        
+        if len(matches) == 0:
+            print("  ⚠ WARNING: No matches found. Database will be empty.", flush=True)
+        
+        # Filter matches by log timestamps
+        print("  Filtering matches by log timestamps...", flush=True)
+        filtered_matches = filter_matches_by_log_timestamps(
+            matches, 
+            str(log_file), 
+            atol=Config.TIMESTAMP_TOLERANCE
+        )
+        print(f"  ✓ {len(filtered_matches)} matches after filtering", flush=True)
+        
+        # Delete existing database if it exists
+        if db_path.exists():
+            print(f"  Removing existing database: {db_path}", flush=True)
+            db_path.unlink()
+            print(f"  ✓ Existing database removed", flush=True)
+        
+        # Prepare timestamp-path pairs for database creation
+        timestamp_path_pairs = []
+        for match in filtered_matches:
+            processed_ts = match[0]
+            raw_file_path = Path(match[3])
+            raw_dir_path = raw_file_path.parent
+            timestamp_path_pairs.append((processed_ts, str(raw_dir_path)))
+        
+        # Create database
+        print(f"  Building database with {len(timestamp_path_pairs)} entries...", flush=True)
+        count = build_and_save_to_database(
+            timestamp_path_pairs,
+            str(processed_root),
+            str(raw_root),
+            str(log_file),
+            str(db_path),
+            atol=Config.TIMESTAMP_TOLERANCE,
+        )
+        
+        print(f"  ✓ Successfully created database with {count} entries", flush=True)
+        return True
+        
+    except Exception as e:
+        print(f"  ✗ ERROR creating database: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
+
+
 def run_tests():
     """Run the complete test suite from total_test.py."""
     print(">>> Entering run_tests() function", flush=True, file=sys.stderr)
+    
+    # Create/rebuild database first
+    if not create_or_rebuild_database():
+        print("⚠ WARNING: Database creation failed, but continuing with tests...", flush=True)
     
     # Force flush to ensure output appears immediately
     print("=" * 70, flush=True)
@@ -173,17 +282,19 @@ def generate_heatmaps(
     # Load configuration
     Config.load_from_file(silent=False)
     
-    # Get database path
+    # Create/rebuild database first
+    if not create_or_rebuild_database():
+        print("✗ ERROR: Failed to create database. Cannot generate heatmaps.", flush=True)
+        return False
+    
+    # Get database path (should exist now)
     db_path = Config.get_database_path()
     if db_path is None:
-        print("✗ ERROR: Database path not configured in config.txt")
-        print("  Please set 'database_path' in config.txt or create the database first.")
-        print("  You can create the database by running: python main.py --test")
+        print("✗ ERROR: Database path not configured in config.txt", flush=True)
         return False
     
     if not db_path.exists():
-        print(f"✗ ERROR: Database not found at {db_path}")
-        print("  Please create the database first by running: python main.py --test")
+        print(f"✗ ERROR: Database was not created at {db_path}", flush=True)
         return False
     
     # Get visualization parameters from config (or use provided)
