@@ -333,6 +333,14 @@ class Config:
             return []
     
     @classmethod
+    def get_heatmap_parameters(cls) -> list[str]:
+        """Parse heatmap_parameters string into list of strings."""
+        params_str = cls.HEATMAP_PARAMETERS.strip()
+        if not params_str:
+            return []
+        return [p.strip() for p in params_str.split(",") if p.strip()]
+    
+    @classmethod
     def validate_paths(cls) -> tuple[bool, list[str]]:
         """
         Validate that all configured paths exist.
