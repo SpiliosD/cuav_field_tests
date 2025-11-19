@@ -414,9 +414,13 @@ def create_heatmaps(
                 # Save figure
                 filename = output_path / f"{parameter}_range_{requested_range:.0f}m.{save_format}"
                 plt.savefig(filename, dpi=300, bbox_inches="tight")
-                plt.close()
-                
                 print(f"✓ Saved heatmap: {filename}")
+                
+                # Show the plot (display interactively)
+                plt.show()
+                
+                # Close figure after showing
+                plt.close()
     
     return results
 

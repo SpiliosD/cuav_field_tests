@@ -245,14 +245,25 @@ def generate_heatmaps(
         for key, data in results.items():
             param = data["parameter"]
             rng = data["range"]
-            n_points = len(data["azimuth"])
+            azimuth = data["azimuth"]
+            elevation = data["elevation"]
+            values = data["values"]
+            n_points = len(azimuth)
             
             # Display user-friendly parameter name
             param_display = param
             if param == "peak":
                 param_display = "SNR (peak)"
             
-            print(f"  - {param_display} at {rng:.0f} m: {n_points} data points")
+            print(f"\n  {param_display} at {rng:.0f} m: {n_points} data points")
+            print(f"  Dataset (first 10 points):")
+            print(f"    Azimuth (°)    Elevation (°)    {param_display} Value")
+            print(f"    " + "-" * 50)
+            # Print first 10 data points (or all if fewer than 10)
+            for i in range(min(10, n_points)):
+                print(f"    {azimuth[i]:12.3f}  {elevation[i]:15.3f}  {values[i]:15.6f}")
+            if n_points > 10:
+                print(f"    ... ({n_points - 10} more points)")
         
         print()
         print(f"✓ Heatmaps saved to: {output_dir}")
