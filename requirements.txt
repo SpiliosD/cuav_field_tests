@@ -10,3 +10,6 @@ matplotlib>=3.5.0
 # Optional: Progress bars for scripts
 tqdm>=4.60.0
 
+# PDF generation (for documentation)
+reportlab>=3.6.0
+
