@@ -4,11 +4,11 @@
 # Empty lines are also ignored
 
 # Directory Paths
-processed_root=G:\Raymetrics_Tests\BOMA2025\20250922\Wind
-raw_root=G:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind
-log_file=G:\Raymetrics_Tests\BOMA2025\20250922\output.txt
+processed_root=G:\Raymetrics_Tests\BOMA2025\20250926\Wind
+raw_root=G:\Raymetrics_Tests\BOMA2025\20250926\Spectra\User\20250926\Wind
+log_file=G:\Raymetrics_Tests\BOMA2025\20250926\output97.txt
 output_dir=timestamp_debug_output
-database_path=data/output.db
+database_path=data/output97.db
 
 # Processing Parameters
 timestamp_tolerance=0.0001
