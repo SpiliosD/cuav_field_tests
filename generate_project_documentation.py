@@ -11,7 +11,7 @@ from datetime import datetime
 
 try:
     from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter, A4
+    from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import inch
     from reportlab.platypus import (
@@ -19,11 +19,8 @@ try:
         Paragraph,
         Spacer,
         PageBreak,
-        Table,
-        TableStyle,
-        Image,
     )
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_JUSTIFY
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
 except ImportError:
     print("ERROR: reportlab is required to generate PDF.")
     print("Install with: pip install reportlab")
@@ -182,60 +179,52 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         body_style
     ))
     
-    # Architecture table
-    arch_data = [
-        ["Module", "Purpose", "Key Functions"],
-        [
-            "<b>parsing</b>",
-            "Extract metadata from filenames and log files",
-            "timestamp_from_spectra_filename(), read_log_files()"
-        ],
-        [
-            "<b>matching</b>",
-            "Align processed and raw data by traversing directory trees",
-            "match_processed_and_raw(), filter_matches_by_log_timestamps()"
-        ],
-        [
-            "<b>reading</b>",
-            "Load data files into NumPy arrays",
-            "read_processed_data_file(), read_raw_spectra_file()"
-        ],
-        [
-            "<b>processing</b>",
-            "Aggregate, filter, and integrate data from multiple sources",
-            "build_timestamp_data_dict(), build_and_save_to_database()"
-        ],
-        [
-            "<b>storage</b>",
-            "SQLite database for persistent data storage",
-            "DataDatabase, query_timestamp(), query_timestamp_range()"
-        ],
-        [
-            "<b>analysis</b>",
-            "Generate visualizations and extract range-resolved data",
-            "create_heatmaps(), extract_range_values()"
-        ],
-    ]
+    story.append(Paragraph(
+        "The <b>parsing</b> module extracts metadata from filenames and log files. "
+        "Key functions include timestamp_from_spectra_filename() for parsing datetime "
+        "information from spectra filenames and read_log_files() for loading log files "
+        "containing azimuth, elevation, and timestamp data.",
+        body_style
+    ))
     
-    arch_table = Table(arch_data, colWidths=[1.5 * inch, 2.5 * inch, 3 * inch])
-    arch_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 1), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
-    ]))
-    story.append(arch_table)
+    story.append(Paragraph(
+        "The <b>matching</b> module aligns processed and raw data by traversing directory "
+        "trees. It provides match_processed_and_raw() to pair processed timestamps with "
+        "raw spectra files and filter_matches_by_log_timestamps() to keep only matches "
+        "present in the log file.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "The <b>reading</b> module handles loading data files into NumPy arrays. It includes "
+        "read_processed_data_file() for loading processed files such as _Peak.txt, _Spectrum.txt, "
+        "and _Wind.txt, as well as read_raw_spectra_file() for loading raw spectra files.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "The <b>processing</b> module aggregates, filters, and integrates data from multiple "
+        "sources. It provides build_timestamp_data_dict() to aggregate data from all sources "
+        "for each timestamp and build_and_save_to_database() to build and save aggregated "
+        "data to the database in one step.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "The <b>storage</b> module manages SQLite database for persistent data storage. It "
+        "includes the DataDatabase class for advanced operations, query_timestamp() for "
+        "querying a single timestamp, and query_timestamp_range() for querying a range of "
+        "timestamps.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "The <b>analysis</b> module generates visualizations and extracts range-resolved data. "
+        "It provides create_heatmaps() to generate heatmaps for parameters at specific ranges "
+        "and extract_range_values() to extract values from range-resolved profiles.",
+        body_style
+    ))
+    
     story.append(Spacer(1, 0.3 * inch))
     
     story.append(Paragraph(
@@ -255,60 +244,18 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     story.append(Paragraph("3. Data Flow", heading1_style))
     story.append(Paragraph(
         "The system processes data through several stages, from raw file discovery to final "
-        "visualization. The following diagram illustrates the data flow:",
+        "visualization. The data flow begins with processed files containing measurement data "
+        "(_Peak.txt, _Spectrum.txt, _Wind.txt) and a log file (output.txt) containing pointing "
+        "angles and timestamps. Timestamps are extracted from both processed files and raw spectra "
+        "filenames. Processed timestamps are then matched with raw spectra files (spectra_*.txt) "
+        "based on index order. The matches are filtered to keep only those present in the log file. "
+        "For each filtered timestamp, data is aggregated from all sources including peak, spectrum, "
+        "wind, azimuth, elevation, and raw spectra. The aggregated data is stored in a SQLite "
+        "database with timestamp as the primary key. Finally, heatmaps are generated by querying "
+        "the database, extracting range-resolved values at specific ranges, and aggregating data "
+        "by azimuth and elevation angles.",
         body_style
     ))
-    
-    # Data flow diagram (text representation)
-    flow_diagram = """
-    ┌─────────────────┐
-    │ Processed Files │
-    │ (_Peak.txt,     │
-    │ _Spectrum.txt,  │
-    │ _Wind.txt)      │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐      ┌──────────────┐
-    │ Extract         │◄─────│ Log File     │
-    │ Timestamps      │      │ (output.txt) │
-    └────────┬────────┘      └──────────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Match with Raw  │
-    │ Spectra Files   │
-    │ (spectra_*.txt) │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Filter by Log   │
-    │ Timestamps      │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Aggregate Data  │
-    │ (peak, spectrum,│
-    │ wind, azimuth,  │
-    │ elevation, raw) │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Store in        │
-    │ SQLite Database │
-    └────────┬────────┘
-             │
-             ▼
-    ┌─────────────────┐
-    │ Generate        │
-    │ Heatmaps        │
-    └─────────────────┘
-    """
-    
-    story.append(Paragraph("<pre>" + flow_diagram + "</pre>", code_style))
     story.append(Spacer(1, 0.2 * inch))
     
     story.append(Paragraph(
@@ -350,89 +297,54 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     # 4. Core Methods
     story.append(Paragraph("4. Core Methods", heading1_style))
     
-    methods_data = [
-        ["Category", "Function", "Description"],
-        [
-            "<b>Parsing</b>",
-            "timestamp_from_spectra_filename()",
-            "Extract datetime from spectra filename format"
-        ],
-        [
-            "",
-            "read_log_files()",
-            "Load log file (columns: azimuth, elevation, timestamp)"
-        ],
-        [
-            "<b>Matching</b>",
-            "match_processed_and_raw()",
-            "Walk directory trees and pair processed/raw files"
-        ],
-        [
-            "",
-            "filter_matches_by_log_timestamps()",
-            "Keep only matches present in log file"
-        ],
-        [
-            "<b>Reading</b>",
-            "read_processed_data_file()",
-            "Load processed files into NumPy arrays"
-        ],
-        [
-            "",
-            "read_raw_spectra_file()",
-            "Load raw spectra (skip first 13 lines for ASCII)"
-        ],
-        [
-            "<b>Processing</b>",
-            "build_timestamp_data_dict()",
-            "Aggregate data from all sources per timestamp"
-        ],
-        [
-            "",
-            "build_and_save_to_database()",
-            "Build and save aggregated data to database"
-        ],
-        [
-            "<b>Storage</b>",
-            "query_timestamp()",
-            "Query single timestamp from database"
-        ],
-        [
-            "",
-            "query_timestamp_range()",
-            "Query range of timestamps from database"
-        ],
-        [
-            "<b>Analysis</b>",
-            "extract_range_values()",
-            "Extract values from range-resolved profile"
-        ],
-        [
-            "",
-            "create_heatmaps()",
-            "Generate heatmaps for parameters at specific ranges"
-        ],
-    ]
+    story.append(Paragraph(
+        "<b>Parsing Methods:</b> The timestamp_from_spectra_filename() function extracts "
+        "datetime information from spectra filenames following the format "
+        "spectra_YYYY-MM-DD_HH-MM-SS.ff.txt. The read_log_files() function loads log files "
+        "containing columns for azimuth, elevation, and timestamps, transposing the data for "
+        "easier access.",
+        body_style
+    ))
     
-    methods_table = Table(methods_data, colWidths=[1.2 * inch, 2.8 * inch, 4 * inch])
-    methods_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 1), (-1, -1), 4),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 4),
-    ]))
-    story.append(methods_table)
+    story.append(Paragraph(
+        "<b>Matching Methods:</b> The match_processed_and_raw() function walks directory trees "
+        "and pairs processed timestamps with raw spectra files based on index order. The "
+        "filter_matches_by_log_timestamps() function keeps only matches whose processed timestamps "
+        "exist in the log file, ensuring data consistency.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>Reading Methods:</b> The read_processed_data_file() function loads processed files "
+        "such as _Peak.txt, _Spectrum.txt, and _Wind.txt into NumPy arrays. The "
+        "read_raw_spectra_file() function loads raw spectra files, automatically skipping the "
+        "first 13 header lines for ASCII format files.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>Processing Methods:</b> The build_timestamp_data_dict() function aggregates data "
+        "from all sources (peak, spectrum, wind, azimuth, elevation, raw spectra) for each "
+        "timestamp into a nested dictionary structure. The build_and_save_to_database() function "
+        "builds and saves aggregated data to the database in one step.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>Storage Methods:</b> The query_timestamp() function queries a single timestamp from "
+        "the database, returning all associated data. The query_timestamp_range() function queries "
+        "a range of timestamps from the database, useful for time-series analysis.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>Analysis Methods:</b> The extract_range_values() function extracts values from "
+        "range-resolved profiles at specific requested ranges. The create_heatmaps() function "
+        "generates heatmaps for parameters at specific ranges, visualizing parameter distributions "
+        "across azimuth and elevation angles.",
+        body_style
+    ))
+    
     story.append(PageBreak())
     
     # 5. Data Processing Pipeline
@@ -506,54 +418,24 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         heading2_style
     ))
     
-    schema_data = [
-        ["Table", "Columns", "Purpose"],
-        [
-            "<b>timestamps</b>",
-            "timestamp (PK), azimuth, elevation,<br/>source_processed_dir, source_raw_dir,<br/>source_log_file, imported_at, updated_at",
-            "Main table storing timestamp metadata"
-        ],
-        [
-            "<b>peak_data</b>",
-            "timestamp (FK), data (JSON)",
-            "Range-resolved peak/SNR data"
-        ],
-        [
-            "<b>spectrum_data</b>",
-            "timestamp (FK), data (JSON)",
-            "Range-resolved spectrum data"
-        ],
-        [
-            "<b>wind_data</b>",
-            "timestamp (FK), data (JSON)",
-            "Range-resolved wind velocity data"
-        ],
-        [
-            "<b>power_density_spectrum</b>",
-            "timestamp (FK), data (JSON)",
-            "Raw power density spectrum data"
-        ],
-    ]
+    story.append(Paragraph(
+        "The database uses a normalized schema with five tables. The <b>timestamps</b> table is the "
+        "main table storing timestamp metadata. It contains columns for timestamp (primary key), "
+        "azimuth, elevation, source_processed_dir, source_raw_dir, source_log_file, imported_at, "
+        "and updated_at. This table serves as the central reference for all timestamp-related data.",
+        body_style
+    ))
     
-    schema_table = Table(schema_data, colWidths=[1.8 * inch, 3 * inch, 3.2 * inch])
-    schema_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 1), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
-    ]))
-    story.append(schema_table)
+    story.append(Paragraph(
+        "Four additional tables store array data, each with a timestamp foreign key and a data "
+        "column storing JSON-formatted arrays. The <b>peak_data</b> table stores range-resolved "
+        "peak/SNR data. The <b>spectrum_data</b> table stores range-resolved spectrum data. The "
+        "<b>wind_data</b> table stores range-resolved wind velocity data. The "
+        "<b>power_density_spectrum</b> table stores raw power density spectrum data. All array data "
+        "tables use ON DELETE CASCADE to maintain referential integrity with the timestamps table.",
+        body_style
+    ))
+    
     story.append(Spacer(1, 0.2 * inch))
     
     story.append(Paragraph(
@@ -627,31 +509,17 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "<b>7.3 Supported Parameters</b>",
         heading2_style
     ))
-    param_data = [
-        ["Parameter", "Source File", "Description"],
-        ["wind", "_Wind.txt", "Wind velocity profile (range-resolved)"],
-        ["peak (SNR)", "_Peak.txt", "Signal-to-noise ratio profile (range-resolved)"],
-        ["spectrum", "_Spectrum.txt", "Spectral power profile (range-resolved)"],
-    ]
-    param_table = Table(param_data, colWidths=[1.5 * inch, 2 * inch, 4.5 * inch])
-    param_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#34495e")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.whitesmoke),
-        ("ALIGN", (0, 0), (-1, -1), "LEFT"),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, 0), 10),
-        ("BOTTOMPADDING", (0, 0), (-1, 0), 12),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.beige),
-        ("GRID", (0, 0), (-1, -1), 1, colors.black),
-        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8f9fa")]),
-        ("FONTSIZE", (0, 1), (-1, -1), 9),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("LEFTPADDING", (0, 0), (-1, -1), 6),
-        ("RIGHTPADDING", (0, 0), (-1, -1), 6),
-        ("TOPPADDING", (0, 1), (-1, -1), 6),
-        ("BOTTOMPADDING", (0, 1), (-1, -1), 6),
-    ]))
-    story.append(param_table)
+    story.append(Paragraph(
+        "The system supports three main parameters for visualization. The <b>wind</b> parameter "
+        "provides wind velocity profiles from _Wind.txt files, representing range-resolved wind "
+        "velocity measurements. The <b>peak</b> parameter (also known as SNR) provides "
+        "signal-to-noise ratio profiles from _Peak.txt files, representing range-resolved SNR "
+        "measurements. The <b>spectrum</b> parameter provides spectral power profiles from "
+        "_Spectrum.txt files, representing range-resolved spectral power measurements. All three "
+        "parameters are range-resolved profiles, meaning each measurement is associated with a "
+        "specific altitude or range value.",
+        body_style
+    ))
     story.append(PageBreak())
     
     # 8. Configuration
