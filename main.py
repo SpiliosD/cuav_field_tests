@@ -139,8 +139,11 @@ def create_or_rebuild_database() -> bool:
     """
     Create or rebuild the database from processed and raw data.
     
+    Supports multiple dataset configurations. Each configuration tuple (processed_root, raw_root, log_file, database_path)
+    will be processed and saved to its respective database.
+    
     This function:
-    1. Matches processed and raw data files
+    1. Matches processed and raw data files for each configuration
     2. Filters matches by log timestamps
     3. Deletes existing database if it exists
     4. Creates a new database with all filtered matches
@@ -148,9 +151,9 @@ def create_or_rebuild_database() -> bool:
     Returns
     -------
     bool
-        True if database was created successfully, False otherwise
+        True if all databases were created successfully, False otherwise
     """
-    print(">>> Creating/rebuilding database...", flush=True, file=sys.stderr)
+    print(">>> Creating/rebuilding database(s)...", flush=True, file=sys.stderr)
     
     try:
         # Import required functions
@@ -160,99 +163,119 @@ def create_or_rebuild_database() -> bool:
             match_processed_and_raw,
         )
         
-        # Get paths from config
-        processed_root = Config.get_processed_root_path()
-        raw_root = Config.get_raw_root_path()
-        log_file = Config.get_log_file_path()
-        db_path = Config.get_database_path()
+        # Get all dataset configurations
+        dataset_configs = Config.get_dataset_configs()
         
-        if db_path is None:
-            print("✗ ERROR: Database path not configured in config.txt", flush=True)
+        if len(dataset_configs) == 0:
+            print("✗ ERROR: No dataset configurations found in config.txt", flush=True)
             return False
         
-        # Validate paths
-        if not processed_root.exists():
-            print(f"✗ ERROR: Processed root not found: {processed_root}", flush=True)
-            return False
+        print(f"  Found {len(dataset_configs)} dataset configuration(s)", flush=True)
         
-        if not raw_root.exists():
-            print(f"✗ ERROR: Raw root not found: {raw_root}", flush=True)
-            return False
+        all_success = True
         
-        if not log_file.exists():
-            print(f"✗ ERROR: Log file not found: {log_file}", flush=True)
-            return False
+        # Process each dataset configuration
+        for config_idx, (processed_root, raw_root, log_file, db_path) in enumerate(dataset_configs, 1):
+            print(f"\n  Processing dataset {config_idx}/{len(dataset_configs)}:", flush=True)
+            
+            if db_path is None:
+                print(f"    ✗ ERROR: Database path not configured for dataset {config_idx}", flush=True)
+                all_success = False
+                continue
+            
+            # Validate paths
+            if not processed_root.exists():
+                print(f"    ✗ ERROR: Processed root not found: {processed_root}", flush=True)
+                all_success = False
+                continue
+            
+            if not raw_root.exists():
+                print(f"    ✗ ERROR: Raw root not found: {raw_root}", flush=True)
+                all_success = False
+                continue
+            
+            if not log_file.exists():
+                print(f"    ✗ ERROR: Log file not found: {log_file}", flush=True)
+                all_success = False
+                continue
+            
+            print(f"    Processed root: {processed_root}", flush=True)
+            print(f"    Raw root: {raw_root}", flush=True)
+            print(f"    Log file: {log_file}", flush=True)
+            print(f"    Database: {db_path}", flush=True)
+            
+            # Match processed and raw data
+            print("    Matching processed and raw files...", flush=True)
+            matches = match_processed_and_raw(processed_root, raw_root)
+            print(f"    ✓ Found {len(matches)} initial matches", flush=True)
+            
+            if len(matches) == 0:
+                print("    ⚠ WARNING: No matches found. Database will be empty.", flush=True)
+            
+            # Filter matches by log timestamps
+            print("    Filtering matches by log timestamps...", flush=True)
+            
+            # Debug: show sample timestamps before filtering (only in debug mode)
+            if Config.is_debug_mode() and len(matches) > 0:
+                sample_match_ts = float(matches[0][0])
+                from data_reader.parsing.logs import extract_log_timestamps
+                from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+                import numpy as np
+                log_ts_raw = extract_log_timestamps(str(log_file))
+                log_ts_sample = float(log_ts_raw[0]) if len(log_ts_raw) > 0 else None
+                log_ts_corrected_sample = correct_processed_timestamp(log_ts_sample) if log_ts_sample else None
+                print(f"      Debug: Sample processed timestamp (corrected): {sample_match_ts:.6f}", flush=True)
+                print(f"      Debug: Sample log timestamp (raw): {log_ts_sample:.6f}" if log_ts_sample else "      Debug: No log timestamps", flush=True)
+                print(f"      Debug: Sample log timestamp (corrected): {log_ts_corrected_sample:.6f}" if log_ts_corrected_sample else "", flush=True)
+            
+            filtered_matches = filter_matches_by_log_timestamps(
+                matches, 
+                str(log_file), 
+                atol=Config.TIMESTAMP_TOLERANCE
+            )
+            print(f"    ✓ {len(filtered_matches)} matches after filtering", flush=True)
+            
+            if len(filtered_matches) == 0:
+                print("    ⚠ WARNING: No matches found after filtering. Database will be empty.", flush=True)
+            
+            # Also track original uncorrected timestamps for debugging
+            original_timestamps_map: dict[str, str] = {}
+            
+            # Convert matches to timestamp-path pairs format expected by build_and_save_to_database
+            # matches is a list of tuples: (processed_timestamp, raw_datetime, raw_timestamp, raw_file_path)
+            timestamp_path_pairs: list[tuple[str, str | Path]] = []
+            for match in filtered_matches:
+                processed_ts = match[0]  # Already corrected timestamp
+                raw_file_path = Path(match[3])  # Full path to raw file
+                
+                # Store original timestamp if available (match[4] if present)
+                if len(match) > 4 and match[4] is not None:
+                    original_timestamps_map[processed_ts] = match[4]
+                
+                # Store full file path so we can extract both directory and filename later
+                timestamp_path_pairs.append((processed_ts, str(raw_file_path)))
+            
+            # Remove existing database if it exists (only for this specific database path)
+            if db_path.exists():
+                print(f"    Removing existing database: {db_path}", flush=True)
+                db_path.unlink()
+            
+            # Create database
+            print(f"    Building database with {len(timestamp_path_pairs)} entries...", flush=True)
+            count = build_and_save_to_database(
+                timestamp_path_pairs,
+                str(processed_root),
+                str(raw_root),
+                str(log_file),
+                str(db_path),
+                atol=Config.TIMESTAMP_TOLERANCE,
+                original_timestamps_map=original_timestamps_map if original_timestamps_map else None,
+            )
+            
+            print(f"    ✓ Successfully created database with {count} entries", flush=True)
         
-        print(f"  Processed root: {processed_root}", flush=True)
-        print(f"  Raw root: {raw_root}", flush=True)
-        print(f"  Log file: {log_file}", flush=True)
-        print(f"  Database: {db_path}", flush=True)
-        
-        # Match processed and raw data
-        print("  Matching processed and raw files...", flush=True)
-        matches = match_processed_and_raw(processed_root, raw_root)
-        print(f"  ✓ Found {len(matches)} initial matches", flush=True)
-        
-        if len(matches) == 0:
-            print("  ⚠ WARNING: No matches found. Database will be empty.", flush=True)
-        
-        # Filter matches by log timestamps
-        print("  Filtering matches by log timestamps...", flush=True)
-        
-        # Debug: show sample timestamps before filtering (only in debug mode)
-        if Config.is_debug_mode() and len(matches) > 0:
-            sample_match_ts = float(matches[0][0])
-            from data_reader.parsing.logs import extract_log_timestamps
-            from data_reader.parsing.timestamp_correction import correct_processed_timestamp
-            import numpy as np
-            log_ts_raw = extract_log_timestamps(str(log_file))
-            log_ts_sample = float(log_ts_raw[0]) if len(log_ts_raw) > 0 else None
-            log_ts_corrected_sample = correct_processed_timestamp(log_ts_sample) if log_ts_sample else None
-            print(f"    Debug: Sample processed timestamp (corrected): {sample_match_ts:.6f}", flush=True)
-            print(f"    Debug: Sample log timestamp (raw): {log_ts_sample:.6f}" if log_ts_sample else "    Debug: No log timestamps", flush=True)
-            print(f"    Debug: Sample log timestamp (corrected): {log_ts_corrected_sample:.6f}" if log_ts_corrected_sample else "", flush=True)
-        
-        filtered_matches = filter_matches_by_log_timestamps(
-            matches, 
-            str(log_file), 
-            atol=Config.TIMESTAMP_TOLERANCE
-        )
-        print(f"  ✓ {len(filtered_matches)} matches after filtering", flush=True)
-        
-        # Delete existing database if it exists
-        if db_path.exists():
-            print(f"  Removing existing database: {db_path}", flush=True)
-            db_path.unlink()
-            print(f"  ✓ Existing database removed", flush=True)
-        
-        # Prepare timestamp-path pairs for database creation
-        # Store full file path so we can extract both directory and filename later
-        # Also track original uncorrected timestamps for debugging
-        timestamp_path_pairs = []
-        original_timestamps_map = {}  # corrected -> original mapping
-        for match in filtered_matches:
-            processed_ts = match[0]  # Corrected timestamp
-            raw_file_path = Path(match[3])
-            # Store original timestamp if available (match[4] if present)
-            if len(match) > 4 and match[4] is not None:
-                original_timestamps_map[processed_ts] = match[4]
-            # Store full file path so we can extract both directory and filename later
-            timestamp_path_pairs.append((processed_ts, str(raw_file_path)))
-        
-        # Create database
-        print(f"  Building database with {len(timestamp_path_pairs)} entries...", flush=True)
-        count = build_and_save_to_database(
-            timestamp_path_pairs,
-            str(processed_root),
-            str(raw_root),
-            str(log_file),
-            str(db_path),
-            atol=Config.TIMESTAMP_TOLERANCE,
-            original_timestamps_map=original_timestamps_map if original_timestamps_map else None,
-        )
-        
-        print(f"  ✓ Successfully created database with {count} entries", flush=True)
-        return True
+        print("", flush=True)
+        return all_success
         
     except Exception as e:
         print(f"  ✗ ERROR creating database: {e}", flush=True, file=sys.stderr)
