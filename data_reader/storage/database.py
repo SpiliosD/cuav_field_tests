@@ -178,6 +178,33 @@ class DataDatabase:
                 FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
             )
         """)
+        
+        # SNR difference table (for sequential range pairs)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS snr_difference (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
+        
+        # Wind difference table (for sequential range pairs)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS wind_difference (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
+        
+        # FWHM table (for dominant frequency peaks)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS fwhm_profile (
+                timestamp REAL PRIMARY KEY,
+                data_json TEXT NOT NULL,
+                FOREIGN KEY (timestamp) REFERENCES timestamps(timestamp) ON DELETE CASCADE
+            )
+        """)
 
         # Create indexes for faster queries
         cursor.execute("""
@@ -351,6 +378,62 @@ class DataDatabase:
             """, (ts_float, freq_json))
         
         self.connection.commit()
+    
+    def insert_computed_analysis_data(
+        self,
+        timestamp: str | float,
+        snr_difference: np.ndarray | None = None,
+        wind_difference: np.ndarray | None = None,
+        fwhm_profile: np.ndarray | None = None,
+    ) -> None:
+        """
+        Insert or update computed analysis data (SNR differences, wind differences, FWHM).
+        
+        Parameters
+        ----------
+        timestamp : str | float
+            Processed timestamp (will be converted to float)
+        snr_difference : np.ndarray | None
+            SNR difference array (differences between sequential range pairs)
+        wind_difference : np.ndarray | None
+            Wind speed difference array (differences between sequential range pairs)
+        fwhm_profile : np.ndarray | None
+            FWHM profile array (FWHM of dominant frequency peak for each range)
+        """
+        if self.connection is None:
+            self.connect()
+        
+        cursor = self.connection.cursor()
+        ts_float = float(timestamp)
+        
+        # Insert or update SNR difference
+        if snr_difference is not None:
+            snr_diff_json = json.dumps(snr_difference.tolist() if isinstance(snr_difference, np.ndarray) else snr_difference)
+            cursor.execute("""
+                INSERT INTO snr_difference (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, snr_diff_json))
+        
+        # Insert or update wind difference
+        if wind_difference is not None:
+            wind_diff_json = json.dumps(wind_difference.tolist() if isinstance(wind_difference, np.ndarray) else wind_difference)
+            cursor.execute("""
+                INSERT INTO wind_difference (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, wind_diff_json))
+        
+        # Insert or update FWHM profile
+        if fwhm_profile is not None:
+            fwhm_json = json.dumps(fwhm_profile.tolist() if isinstance(fwhm_profile, np.ndarray) else fwhm_profile)
+            cursor.execute("""
+                INSERT INTO fwhm_profile (timestamp, data_json)
+                VALUES (?, ?)
+                ON CONFLICT(timestamp) DO UPDATE SET data_json = excluded.data_json
+            """, (ts_float, fwhm_json))
+        
+        self.connection.commit()
 
     def insert_from_dict(
         self,
@@ -444,6 +527,9 @@ class DataDatabase:
             ("snr_profile", "snr_profile"),
             ("wind_profile", "wind_profile"),
             ("dominant_frequency_profile", "dominant_frequency_profile"),
+            ("snr_difference", "snr_difference"),
+            ("wind_difference", "wind_difference"),
+            ("fwhm_profile", "fwhm_profile"),
         ]:
             cursor.execute(f"""
                 SELECT data_json FROM {table_name} WHERE timestamp = ?
@@ -543,6 +629,9 @@ class DataDatabase:
             ("snr_profile", "snr_profile"),
             ("wind_profile", "wind_profile"),
             ("dominant_frequency_profile", "dominant_frequency_profile"),
+            ("snr_difference", "snr_difference"),
+            ("wind_difference", "wind_difference"),
+            ("fwhm_profile", "fwhm_profile"),
         ]:
             cursor.execute(f"SELECT COUNT(*) as count FROM {table_name}")
             stats[f"count_with_{key}"] = cursor.fetchone()["count"]

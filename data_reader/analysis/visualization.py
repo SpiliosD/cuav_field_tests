@@ -24,6 +24,10 @@ __all__ = [
     "aggregate_azimuth_elevation_data",
     "process_single_profiles",
     "create_profile_visualizations",
+    "compute_sequential_differences",
+    "compute_fwhm_profile",
+    "create_difference_heatmaps",
+    "create_fwhm_heatmaps",
 ]
 
 
@@ -816,6 +820,623 @@ def create_profile_visualizations(
         plt.close()
         results["dominant_frequency_profiles"] = dominant_frequency_profiles
         results["dominant_frequency_ranges"] = ranges
+    
+    return results
+
+
+def compute_sequential_differences(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    requested_ranges: list[float],
+) -> dict[str, Any]:
+    """
+    Compute differences between sequential range pairs for SNR and wind profiles.
+    
+    For each timestamp, computes the difference between consecutive ranges:
+    - SNR difference: SNR[i+1] - SNR[i] for each sequential pair
+    - Wind difference: Wind[i+1] - Wind[i] for each sequential pair
+    
+    The differences are computed only for the ranges specified in requested_ranges.
+    Results are stored in the database.
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    requested_ranges : list[float]
+        List of specific ranges in meters to use for computing differences
+    
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with processing statistics
+    """
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        db.create_tables()
+        
+        # Query all timestamps with profile data
+        records = db.query_timestamp_range()
+        
+        print(f"Computing sequential differences for {len(records)} timestamps...")
+        
+        processed_count = 0
+        skipped_count = 0
+        
+        # Sort requested ranges to ensure sequential pairs
+        sorted_ranges = sorted(requested_ranges)
+        
+        for record in records:
+            timestamp = record["timestamp"]
+            snr_profile = record.get("snr_profile")
+            wind_profile = record.get("wind_profile")
+            
+            if snr_profile is None and wind_profile is None:
+                skipped_count += 1
+                continue
+            
+            # Compute range indices for requested ranges
+            range_indices = []
+            for req_range in sorted_ranges:
+                # Calculate index: (range - starting_range) / range_step
+                idx = int(round((req_range - starting_range) / range_step))
+                if 0 <= idx < len(snr_profile if snr_profile is not None else wind_profile):
+                    range_indices.append(idx)
+            
+            if len(range_indices) < 2:
+                skipped_count += 1
+                continue
+            
+            # Compute SNR differences
+            snr_difference = None
+            if snr_profile is not None:
+                snr_values = [snr_profile[idx] if not np.isnan(snr_profile[idx]) else np.nan for idx in range_indices]
+                # Compute differences: value[i+1] - value[i]
+                snr_diff = []
+                for i in range(len(snr_values) - 1):
+                    if not np.isnan(snr_values[i]) and not np.isnan(snr_values[i+1]):
+                        snr_diff.append(snr_values[i+1] - snr_values[i])
+                    else:
+                        snr_diff.append(np.nan)
+                snr_difference = np.array(snr_diff)
+            
+            # Compute wind differences
+            wind_difference = None
+            if wind_profile is not None:
+                wind_values = [wind_profile[idx] if not np.isnan(wind_profile[idx]) else np.nan for idx in range_indices]
+                # Compute differences: value[i+1] - value[i]
+                wind_diff = []
+                for i in range(len(wind_values) - 1):
+                    if not np.isnan(wind_values[i]) and not np.isnan(wind_values[i+1]):
+                        wind_diff.append(wind_values[i+1] - wind_values[i])
+                    else:
+                        wind_diff.append(np.nan)
+                wind_difference = np.array(wind_diff)
+            
+            # Store in database
+            db.insert_computed_analysis_data(
+                timestamp=timestamp,
+                snr_difference=snr_difference,
+                wind_difference=wind_difference,
+            )
+            
+            processed_count += 1
+        
+        print(f"Processed: {processed_count} timestamps")
+        print(f"Skipped: {skipped_count} timestamps")
+        
+        return {
+            "processed_count": processed_count,
+            "skipped_count": skipped_count,
+            "total_count": len(records),
+        }
+    
+    finally:
+        db.close()
+
+
+def compute_fwhm_profile(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    fft_size: int,
+    sampling_rate: float,
+    frequency_interval: tuple[float, float],
+) -> dict[str, Any]:
+    """
+    Compute Full Width at Half Maximum (FWHM) of dominant frequency peaks.
+    
+    For each timestamp and range, finds the dominant frequency peak and computes
+    its FWHM from the power density spectrum.
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    fft_size : int
+        FFT size used for frequency computation
+    sampling_rate : float
+        Sampling rate in Hz
+    frequency_interval : tuple[float, float]
+        (min_freq, max_freq) in Hz - allowable frequency interval
+    
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary with processing statistics
+    """
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        db.create_tables()
+        
+        records = db.query_timestamp_range()
+        
+        print(f"Computing FWHM profiles for {len(records)} timestamps...")
+        
+        # Initialize frequency array
+        num_freq_bins = None
+        frequencies = None
+        
+        processed_count = 0
+        skipped_count = 0
+        
+        for record in records:
+            timestamp = record["timestamp"]
+            power_density_spectrum = record.get("power_density_spectrum")
+            dominant_frequency_profile = record.get("dominant_frequency_profile")
+            
+            if power_density_spectrum is None or dominant_frequency_profile is None:
+                skipped_count += 1
+                continue
+            
+            if power_density_spectrum.ndim != 2:
+                skipped_count += 1
+                continue
+            
+            num_ranges = power_density_spectrum.shape[0]
+            num_spectrum_bins = power_density_spectrum.shape[1]
+            
+            # Initialize frequency array on first valid spectrum
+            if frequencies is None:
+                num_freq_bins = num_spectrum_bins
+                if num_freq_bins == fft_size // 2 + 1:
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins)
+                elif num_freq_bins == fft_size // 2:
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins, endpoint=False)
+                else:
+                    frequencies = np.linspace(0, sampling_rate / 2, num_freq_bins)
+            
+            if num_spectrum_bins != num_freq_bins:
+                skipped_count += 1
+                continue
+            
+            # Compute FWHM for each range
+            fwhm_profile = np.full(num_ranges, np.nan)
+            
+            for range_idx in range(num_ranges):
+                spectrum = power_density_spectrum[range_idx, :]
+                dominant_freq = dominant_frequency_profile[range_idx]
+                
+                if np.isnan(dominant_freq):
+                    continue
+                
+                # Find index of dominant frequency
+                freq_idx = np.argmin(np.abs(frequencies - dominant_freq))
+                
+                # Find peak value
+                peak_value = spectrum[freq_idx]
+                if peak_value <= 0:
+                    continue
+                
+                # Half maximum value
+                half_max = peak_value / 2.0
+                
+                # Find left and right half-maximum points
+                # Search to the left
+                left_idx = freq_idx
+                while left_idx > 0 and spectrum[left_idx] >= half_max:
+                    left_idx -= 1
+                
+                # Search to the right
+                right_idx = freq_idx
+                while right_idx < len(spectrum) - 1 and spectrum[right_idx] >= half_max:
+                    right_idx += 1
+                
+                # Interpolate to find exact half-maximum points
+                if left_idx < freq_idx:
+                    # Linear interpolation for left point
+                    if spectrum[left_idx] < half_max:
+                        # Interpolate between left_idx and left_idx+1
+                        if left_idx + 1 < len(spectrum):
+                            y1, y2 = spectrum[left_idx], spectrum[left_idx + 1]
+                            if y2 > y1:
+                                t = (half_max - y1) / (y2 - y1)
+                                left_freq = frequencies[left_idx] + t * (frequencies[left_idx + 1] - frequencies[left_idx])
+                            else:
+                                left_freq = frequencies[left_idx]
+                        else:
+                            left_freq = frequencies[left_idx]
+                    else:
+                        left_freq = frequencies[left_idx]
+                else:
+                    left_freq = frequencies[freq_idx]
+                
+                if right_idx > freq_idx:
+                    # Linear interpolation for right point
+                    if right_idx < len(spectrum) and spectrum[right_idx] < half_max:
+                        # Interpolate between right_idx-1 and right_idx
+                        if right_idx - 1 >= 0:
+                            y1, y2 = spectrum[right_idx - 1], spectrum[right_idx]
+                            if y1 > y2:
+                                t = (half_max - y2) / (y1 - y2)
+                                right_freq = frequencies[right_idx - 1] + t * (frequencies[right_idx] - frequencies[right_idx - 1])
+                            else:
+                                right_freq = frequencies[right_idx]
+                        else:
+                            right_freq = frequencies[right_idx]
+                    else:
+                        right_freq = frequencies[min(right_idx, len(frequencies) - 1)]
+                else:
+                    right_freq = frequencies[freq_idx]
+                
+                # FWHM is the difference in frequency
+                fwhm = right_freq - left_freq
+                fwhm_profile[range_idx] = fwhm
+            
+            # Store in database
+            db.insert_computed_analysis_data(
+                timestamp=timestamp,
+                fwhm_profile=fwhm_profile,
+            )
+            
+            processed_count += 1
+        
+        print(f"Processed: {processed_count} timestamps")
+        print(f"Skipped: {skipped_count} timestamps")
+        
+        return {
+            "processed_count": processed_count,
+            "skipped_count": skipped_count,
+            "total_count": len(records),
+        }
+    
+    finally:
+        db.close()
+
+
+def create_difference_heatmaps(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    requested_ranges: list[float],
+    difference_type: str,  # 'snr' or 'wind'
+    output_dir: str | Path | None = None,
+    azimuth_bins: int | None = None,
+    elevation_bins: int | None = None,
+    colormap: str = "coolwarm",
+    save_format: str = "png",
+) -> dict[str, dict[str, Any]]:
+    """
+    Create heatmaps for sequential differences (SNR or wind) between range pairs.
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    requested_ranges : list[float]
+        List of ranges used to compute differences (creates pairs)
+    difference_type : str
+        Type of difference: 'snr' or 'wind'
+    output_dir : str | Path | None
+        Directory to save heatmap images
+    azimuth_bins : int | None
+        Number of bins for azimuth axis
+    elevation_bins : int | None
+        Number of bins for elevation axis
+    colormap : str
+        Matplotlib colormap name
+    save_format : str
+        Image format to save
+    
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Dictionary with heatmap data for each range pair
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError("matplotlib is required for creating heatmaps. Install with: pip install matplotlib")
+    
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        records = db.query_timestamp_range()
+    finally:
+        db.close()
+    
+    # Sort requested ranges to create sequential pairs
+    sorted_ranges = sorted(requested_ranges)
+    range_pairs = []
+    for i in range(len(sorted_ranges) - 1):
+        range_pairs.append((sorted_ranges[i], sorted_ranges[i+1]))
+    
+    results = {}
+    
+    # Get difference data key
+    diff_key = f"{difference_type}_difference"
+    
+    # Create heatmap for each range pair
+    for range_pair_idx, (range1, range2) in enumerate(range_pairs):
+        # Extract difference values for this pair
+        azimuth_list = []
+        elevation_list = []
+        values_list = []
+        
+        for record in records:
+            azimuth = record.get("azimuth")
+            elevation = record.get("elevation")
+            diff_data = record.get(diff_key)
+            
+            if azimuth is None or elevation is None or diff_data is None:
+                continue
+            
+            if range_pair_idx < len(diff_data) and not np.isnan(diff_data[range_pair_idx]):
+                azimuth_list.append(azimuth)
+                elevation_list.append(elevation)
+                values_list.append(diff_data[range_pair_idx])
+        
+        if len(azimuth_list) == 0:
+            print(f"⚠ No data found for {difference_type} difference between {range1} and {range2} m")
+            continue
+        
+        azimuth = np.array(azimuth_list)
+        elevation = np.array(elevation_list)
+        values = np.array(values_list)
+        
+        # Create gridded heatmap data
+        azimuth_grid, elevation_grid, value_grid = create_heatmap_data(
+            azimuth,
+            elevation,
+            values,
+            azimuth_bins=azimuth_bins,
+            elevation_bins=elevation_bins,
+        )
+        
+        key = f"{difference_type}_diff_{range1:.0f}_{range2:.0f}"
+        results[key] = {
+            "azimuth_grid": azimuth_grid,
+            "elevation_grid": elevation_grid,
+            "value_grid": value_grid,
+            "azimuth": azimuth,
+            "elevation": elevation,
+            "values": values,
+            "range_pair": (range1, range2),
+            "difference_type": difference_type,
+        }
+        
+        # Create and save heatmap if output directory is provided
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Create bin edges for pcolormesh
+            if len(azimuth_grid) > 1:
+                azimuth_spacing = azimuth_grid[1] - azimuth_grid[0]
+                azimuth_edges = np.append(
+                    azimuth_grid - azimuth_spacing / 2,
+                    azimuth_grid[-1] + azimuth_spacing / 2
+                )
+            else:
+                azimuth_spacing = 1.0
+                azimuth_edges = np.array([azimuth_grid[0] - 0.5, azimuth_grid[0] + 0.5])
+            
+            if len(elevation_grid) > 1:
+                elevation_spacing = elevation_grid[1] - elevation_grid[0]
+                elevation_edges = np.append(
+                    elevation_grid - elevation_spacing / 2,
+                    elevation_grid[-1] + elevation_spacing / 2
+                )
+            else:
+                elevation_spacing = 1.0
+                elevation_edges = np.array([elevation_grid[0] - 0.5, elevation_grid[0] + 0.5])
+            
+            azimuth_mesh, elevation_mesh = np.meshgrid(azimuth_edges, elevation_edges)
+            
+            im = ax.pcolormesh(
+                azimuth_mesh,
+                elevation_mesh,
+                value_grid,
+                cmap=colormap,
+                shading='flat',
+                edgecolors='none',
+            )
+            
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label(f"{difference_type.upper()} Difference (m/s)" if difference_type == 'wind' else f"{difference_type.upper()} Difference", rotation=270, labelpad=20)
+            
+            ax.set_xlabel("Azimuth Angle (degrees)", fontsize=12)
+            ax.set_ylabel("Elevation Angle (degrees)", fontsize=12)
+            ax.set_title(
+                f"{difference_type.upper()} Difference Heatmap: {range1:.0f}m to {range2:.0f}m",
+                fontsize=14,
+                fontweight="bold",
+            )
+            
+            filename = output_path / f"{difference_type}_difference_{range1:.0f}_{range2:.0f}m.{save_format}"
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            print(f"✓ Saved {difference_type} difference heatmap: {filename}")
+            
+            plt.show(block=False)
+            plt.pause(0.5)
+            plt.close()
+    
+    return results
+
+
+def create_fwhm_heatmaps(
+    db_path: str | Path,
+    range_step: float,
+    starting_range: float,
+    requested_ranges: list[float],
+    output_dir: str | Path | None = None,
+    azimuth_bins: int | None = None,
+    elevation_bins: int | None = None,
+    colormap: str = "viridis",
+    save_format: str = "png",
+) -> dict[str, dict[str, Any]]:
+    """
+    Create heatmaps for FWHM of dominant frequency peaks at specific ranges.
+    
+    Parameters
+    ----------
+    db_path : str | Path
+        Path to the database file
+    range_step : float
+        Spacing between range bins in meters
+    starting_range : float
+        Starting range in meters
+    requested_ranges : list[float]
+        List of specific ranges in meters to visualize
+    output_dir : str | Path | None
+        Directory to save heatmap images
+    azimuth_bins : int | None
+        Number of bins for azimuth axis
+    elevation_bins : int | None
+        Number of bins for elevation axis
+    colormap : str
+        Matplotlib colormap name
+    save_format : str
+        Image format to save
+    
+    Returns
+    -------
+    dict[str, dict[str, Any]]
+        Dictionary with heatmap data for each range
+    """
+    try:
+        import matplotlib.pyplot as plt
+    except ImportError:
+        raise ImportError("matplotlib is required for creating heatmaps. Install with: pip install matplotlib")
+    
+    db = DataDatabase(db_path)
+    try:
+        db.connect()
+        records = db.query_timestamp_range()
+    finally:
+        db.close()
+    
+    results = {}
+    
+    # Create heatmap for each requested range
+    for requested_range in requested_ranges:
+        # Extract FWHM values at this range
+        azimuth, elevation, values = aggregate_azimuth_elevation_data(
+            records,
+            "fwhm_profile",
+            range_step,
+            starting_range,
+            requested_range,
+        )
+        
+        if len(azimuth) == 0:
+            print(f"⚠ No FWHM data found at range {requested_range} m")
+            continue
+        
+        # Create gridded heatmap data
+        azimuth_grid, elevation_grid, value_grid = create_heatmap_data(
+            azimuth,
+            elevation,
+            values,
+            azimuth_bins=azimuth_bins,
+            elevation_bins=elevation_bins,
+        )
+        
+        key = f"fwhm_{requested_range}"
+        results[key] = {
+            "azimuth_grid": azimuth_grid,
+            "elevation_grid": elevation_grid,
+            "value_grid": value_grid,
+            "azimuth": azimuth,
+            "elevation": elevation,
+            "values": values,
+            "range": requested_range,
+        }
+        
+        # Create and save heatmap if output directory is provided
+        if output_dir is not None:
+            output_path = Path(output_dir)
+            output_path.mkdir(parents=True, exist_ok=True)
+            
+            fig, ax = plt.subplots(figsize=(10, 8))
+            
+            # Create bin edges for pcolormesh
+            if len(azimuth_grid) > 1:
+                azimuth_spacing = azimuth_grid[1] - azimuth_grid[0]
+                azimuth_edges = np.append(
+                    azimuth_grid - azimuth_spacing / 2,
+                    azimuth_grid[-1] + azimuth_spacing / 2
+                )
+            else:
+                azimuth_spacing = 1.0
+                azimuth_edges = np.array([azimuth_grid[0] - 0.5, azimuth_grid[0] + 0.5])
+            
+            if len(elevation_grid) > 1:
+                elevation_spacing = elevation_grid[1] - elevation_grid[0]
+                elevation_edges = np.append(
+                    elevation_grid - elevation_spacing / 2,
+                    elevation_grid[-1] + elevation_spacing / 2
+                )
+            else:
+                elevation_spacing = 1.0
+                elevation_edges = np.array([elevation_grid[0] - 0.5, elevation_grid[0] + 0.5])
+            
+            azimuth_mesh, elevation_mesh = np.meshgrid(azimuth_edges, elevation_edges)
+            
+            im = ax.pcolormesh(
+                azimuth_mesh,
+                elevation_mesh,
+                value_grid,
+                cmap=colormap,
+                shading='flat',
+                edgecolors='none',
+            )
+            
+            cbar = plt.colorbar(im, ax=ax)
+            cbar.set_label("FWHM (Hz)", rotation=270, labelpad=20)
+            
+            ax.set_xlabel("Azimuth Angle (degrees)", fontsize=12)
+            ax.set_ylabel("Elevation Angle (degrees)", fontsize=12)
+            ax.set_title(
+                f"FWHM Heatmap at Range {requested_range:.0f} m",
+                fontsize=14,
+                fontweight="bold",
+            )
+            
+            filename = output_path / f"fwhm_range_{requested_range:.0f}m.{save_format}"
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
+            print(f"✓ Saved FWHM heatmap: {filename}")
+            
+            plt.show(block=False)
+            plt.pause(0.5)
+            plt.close()
     
     return results
 

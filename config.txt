@@ -46,12 +46,13 @@ requested_ranges=48,96
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode
-# Options: 'test', 'heatmaps', 'profiles', or comma-separated: 'heatmaps,profiles'
+# Options: 'test', 'heatmaps', 'profiles', 'differences', 'fwhm', or comma-separated combinations
 # 'test': Run the complete test suite (total_test.py) - cannot be combined with others
 # 'heatmaps': Generate heatmaps using parameters below
 # 'profiles': Generate single-profile visualizations
-# 'heatmaps,profiles': Run both modes simultaneously
-# Examples: "heatmaps", "profiles", "heatmaps,profiles"
+# 'differences': Compute and visualize SNR/wind differences between sequential range pairs
+# 'fwhm': Compute and visualize FWHM of dominant frequency peaks
+# Examples: "heatmaps", "profiles", "heatmaps,profiles", "differences,fwhm"
 run_mode=heatmaps
 
 # Heatmap Parameters (only used when run_mode='heatmaps')

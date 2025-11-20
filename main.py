@@ -416,6 +416,264 @@ def generate_heatmaps(
         return False
 
 
+def generate_differences(
+    output_dir: Path | None = None,
+    save_format: str = "png",
+):
+    """
+    Generate sequential difference analysis (Mode 4).
+    
+    Computes SNR and wind speed differences between sequential range pairs
+    and creates heatmap visualizations.
+    
+    Parameters
+    ----------
+    output_dir : Path | None
+        Output directory for difference heatmap images. If None, uses default from config.txt.
+    save_format : str
+        Image format to save (default: 'png').
+    """
+    print(">>> Importing difference analysis functions (lazy import)...", flush=True, file=sys.stderr)
+    try:
+        from data_reader.analysis.visualization import (
+            compute_sequential_differences,
+            create_difference_heatmaps,
+        )
+        print(">>> ✓ Difference functions imported successfully", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR importing difference functions: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
+    
+    print("=" * 70, flush=True)
+    print("Generating Sequential Differences (Mode 4)", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
+    
+    # Load configuration
+    Config.load_from_file(silent=False)
+    
+    # Get database path
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("✗ ERROR: Database path not configured in config.txt", flush=True)
+        return False
+    
+    # Check if database exists
+    if not db_path.exists():
+        print("✗ ERROR: Database does not exist. Please run profiles mode first to generate profile data.", flush=True)
+        return False
+    
+    # Get visualization parameters from config
+    range_step = Config.RANGE_STEP
+    starting_range = Config.STARTING_RANGE
+    requested_ranges = Config.get_requested_ranges()
+    
+    if not requested_ranges:
+        print("✗ ERROR: No requested_ranges specified in config.txt", flush=True)
+        return False
+    
+    if output_dir is None:
+        base_output_dir = Config.get_visualization_output_dir_path()
+        logfile_basename = get_logfile_basename()
+        output_dir = base_output_dir / logfile_basename
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Print configuration
+    print(f"Configuration:")
+    print(f"  Database: {db_path}")
+    print(f"  Range Step: {range_step} m")
+    print(f"  Starting Range: {starting_range} m")
+    print(f"  Requested Ranges: {requested_ranges} m")
+    print(f"  Output Directory: {output_dir}")
+    print(f"  Save Format: {save_format}")
+    print()
+    
+    try:
+        # Step 1: Compute differences
+        print("Computing sequential differences...")
+        processing_stats = compute_sequential_differences(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            requested_ranges=requested_ranges,
+        )
+        
+        print()
+        print(f"Processing complete:")
+        print(f"  Processed: {processing_stats['processed_count']} timestamps")
+        print(f"  Skipped: {processing_stats['skipped_count']} timestamps")
+        print(f"  Total: {processing_stats['total_count']} timestamps")
+        print()
+        
+        # Step 2: Generate heatmaps for SNR differences
+        print("Generating SNR difference heatmaps...")
+        snr_results = create_difference_heatmaps(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            requested_ranges=requested_ranges,
+            difference_type="snr",
+            output_dir=output_dir,
+            colormap=Config.HEATMAP_COLORMAP,
+            save_format=save_format,
+        )
+        
+        # Step 3: Generate heatmaps for wind differences
+        print("Generating wind difference heatmaps...")
+        wind_results = create_difference_heatmaps(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            requested_ranges=requested_ranges,
+            difference_type="wind",
+            output_dir=output_dir,
+            colormap=Config.HEATMAP_COLORMAP,
+            save_format=save_format,
+        )
+        
+        print()
+        print(f"✓ All outputs saved to: {output_dir}")
+        print()
+        return True
+        
+    except Exception as e:
+        print(f"✗ ERROR: Failed to generate differences: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
+def generate_fwhm(
+    output_dir: Path | None = None,
+    save_format: str = "png",
+):
+    """
+    Generate FWHM analysis (Mode 5).
+    
+    Computes Full Width at Half Maximum of dominant frequency peaks
+    and creates heatmap visualizations.
+    
+    Parameters
+    ----------
+    output_dir : Path | None
+        Output directory for FWHM heatmap images. If None, uses default from config.txt.
+    save_format : str
+        Image format to save (default: 'png').
+    """
+    print(">>> Importing FWHM analysis functions (lazy import)...", flush=True, file=sys.stderr)
+    try:
+        from data_reader.analysis.visualization import (
+            compute_fwhm_profile,
+            create_fwhm_heatmaps,
+        )
+        print(">>> ✓ FWHM functions imported successfully", flush=True, file=sys.stderr)
+    except Exception as e:
+        print(f">>> ✗ ERROR importing FWHM functions: {e}", flush=True, file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        return False
+    
+    print("=" * 70, flush=True)
+    print("Generating FWHM Analysis (Mode 5)", flush=True)
+    print("=" * 70, flush=True)
+    print(flush=True)
+    
+    # Load configuration
+    Config.load_from_file(silent=False)
+    
+    # Get database path
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("✗ ERROR: Database path not configured in config.txt", flush=True)
+        return False
+    
+    # Check if database exists
+    if not db_path.exists():
+        print("✗ ERROR: Database does not exist. Please run profiles mode first to generate profile data.", flush=True)
+        return False
+    
+    # Get visualization parameters from config
+    range_step = Config.RANGE_STEP
+    starting_range = Config.STARTING_RANGE
+    requested_ranges = Config.get_requested_ranges()
+    
+    # Get Mode 3 parameters from config (needed for FWHM computation)
+    fft_size = Config.PROFILE_FFT_SIZE
+    sampling_rate = Config.PROFILE_SAMPLING_RATE
+    frequency_interval = Config.get_profile_frequency_interval()
+    
+    if not requested_ranges:
+        print("✗ ERROR: No requested_ranges specified in config.txt", flush=True)
+        return False
+    
+    if output_dir is None:
+        base_output_dir = Config.get_visualization_output_dir_path()
+        logfile_basename = get_logfile_basename()
+        output_dir = base_output_dir / logfile_basename
+    
+    # Ensure output directory exists
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Print configuration
+    print(f"Configuration:")
+    print(f"  Database: {db_path}")
+    print(f"  Range Step: {range_step} m")
+    print(f"  Starting Range: {starting_range} m")
+    print(f"  Requested Ranges: {requested_ranges} m")
+    print(f"  FFT Size: {fft_size}")
+    print(f"  Sampling Rate: {sampling_rate} Hz")
+    print(f"  Frequency Interval: [{frequency_interval[0]}, {frequency_interval[1]}] Hz")
+    print(f"  Output Directory: {output_dir}")
+    print(f"  Save Format: {save_format}")
+    print()
+    
+    try:
+        # Step 1: Compute FWHM
+        print("Computing FWHM profiles...")
+        processing_stats = compute_fwhm_profile(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            fft_size=fft_size,
+            sampling_rate=sampling_rate,
+            frequency_interval=frequency_interval,
+        )
+        
+        print()
+        print(f"Processing complete:")
+        print(f"  Processed: {processing_stats['processed_count']} timestamps")
+        print(f"  Skipped: {processing_stats['skipped_count']} timestamps")
+        print(f"  Total: {processing_stats['total_count']} timestamps")
+        print()
+        
+        # Step 2: Generate heatmaps
+        print("Generating FWHM heatmaps...")
+        results = create_fwhm_heatmaps(
+            db_path=db_path,
+            range_step=range_step,
+            starting_range=starting_range,
+            requested_ranges=requested_ranges,
+            output_dir=output_dir,
+            colormap=Config.HEATMAP_COLORMAP,
+            save_format=save_format,
+        )
+        
+        print()
+        print(f"✓ All outputs saved to: {output_dir}")
+        print()
+        return True
+        
+    except Exception as e:
+        print(f"✗ ERROR: Failed to generate FWHM: {e}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+
 def generate_profiles(
     output_dir: Path | None = None,
     save_format: str = "png",
@@ -597,14 +855,24 @@ Examples:
   # Generate both heatmaps and profiles simultaneously
   python main.py --heatmaps --profiles
 
+  # Compute and visualize sequential differences (Mode 4)
+  python main.py --differences
+
+  # Compute and visualize FWHM of dominant frequency peaks (Mode 5)
+  python main.py --fwhm
+
+  # Run multiple modes simultaneously
+  python main.py --heatmaps --profiles --differences --fwhm
+
 Note:
   - 'snr' and 'peak' refer to the same parameter (data from _Peak.txt)
   - 'wind' refers to wind data from _Wind.txt
   - 'spectrum' refers to spectrum data from _Spectrum.txt
   - When running from IDE without arguments, set 'run_mode' in config.txt
-  - --test is mutually exclusive with --heatmaps and --profiles
-  - --heatmaps and --profiles can be combined to run simultaneously
+  - --test is mutually exclusive with other modes
+  - Other modes can be combined to run simultaneously
   - All figures are displayed for 0.5 seconds then automatically closed
+  - Mode 4 (differences) and Mode 5 (fwhm) require Mode 3 (profiles) to be run first
         """,
         )
         
@@ -626,6 +894,18 @@ Note:
             "--profiles",
             action="store_true",
             help="Generate single-profile visualizations (Mode 3). Can be combined with --heatmaps.",
+        )
+        
+        parser.add_argument(
+            "--differences",
+            action="store_true",
+            help="Compute and visualize SNR and wind differences between sequential range pairs (Mode 4).",
+        )
+        
+        parser.add_argument(
+            "--fwhm",
+            action="store_true",
+            help="Compute and visualize FWHM of dominant frequency peaks (Mode 5).",
         )
         
         # Heatmap-specific arguments
@@ -689,22 +969,26 @@ Note:
         # Determine execution mode (command-line takes precedence over config)
         # Test mode is mutually exclusive with others
         if args.test:
-            if args.heatmaps or args.profiles:
-                print("✗ ERROR: --test cannot be combined with --heatmaps or --profiles", flush=True)
+            if args.heatmaps or args.profiles or args.differences or args.fwhm:
+                print("✗ ERROR: --test cannot be combined with other modes", flush=True)
                 sys.exit(1)
             run_test = True
             run_heatmaps = False
             run_profiles = False
+            run_differences = False
+            run_fwhm = False
             print(">>> Running in 'test' mode (from command-line argument)", flush=True, file=sys.stderr)
             print(flush=True)
         else:
-            # Check if heatmaps or profiles are requested via command-line
+            # Check if modes are requested via command-line
             run_test = False
             run_heatmaps = args.heatmaps
             run_profiles = args.profiles
+            run_differences = args.differences
+            run_fwhm = args.fwhm
             
-            # If neither specified, use config file mode
-            if not run_heatmaps and not run_profiles:
+            # If none specified, use config file mode
+            if not run_heatmaps and not run_profiles and not run_differences and not run_fwhm:
                 config_mode = Config.RUN_MODE.lower().strip()
                 # Support comma-separated values like "heatmaps,profiles"
                 modes_list = [m.strip() for m in config_mode.split(",")]
@@ -714,23 +998,27 @@ Note:
                         print(f">>> ⚠ WARNING: 'test' cannot be combined with other modes in config.txt. Using 'test' only.", flush=True, file=sys.stderr)
                     run_test = True
                 else:
-                    # Check for heatmaps and profiles
+                    # Check for all modes
                     if "heatmaps" in modes_list:
                         run_heatmaps = True
                     if "profiles" in modes_list:
                         run_profiles = True
+                    if "differences" in modes_list:
+                        run_differences = True
+                    if "fwhm" in modes_list:
+                        run_fwhm = True
                     
                     # Validate modes
-                    valid_modes = {"test", "heatmaps", "profiles"}
+                    valid_modes = {"test", "heatmaps", "profiles", "differences", "fwhm"}
                     invalid_modes = [m for m in modes_list if m not in valid_modes]
                     if invalid_modes:
-                        print(f">>> ⚠ WARNING: Invalid run_mode values '{invalid_modes}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
-                        if not run_heatmaps and not run_profiles:
+                        print(f">>> ⚠ WARNING: Invalid run_mode values '{invalid_modes}' in config.txt. Valid options: {', '.join(sorted(valid_modes))}", flush=True, file=sys.stderr)
+                        if not run_heatmaps and not run_profiles and not run_differences and not run_fwhm:
                             print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
                             run_test = True
                     
                     # Default to test if nothing valid was specified
-                    if not run_test and not run_heatmaps and not run_profiles:
+                    if not run_test and not run_heatmaps and not run_profiles and not run_differences and not run_fwhm:
                         run_test = True
             
             if run_test:
@@ -742,6 +1030,10 @@ Note:
                     modes.append("heatmaps")
                 if run_profiles:
                     modes.append("profiles")
+                if run_differences:
+                    modes.append("differences")
+                if run_fwhm:
+                    modes.append("fwhm")
                 if modes:
                     print(f">>> Running in '{' and '.join(modes)}' mode (from command-line/config)", flush=True, file=sys.stderr)
                 print(flush=True)
@@ -807,6 +1099,50 @@ Note:
                 )
                 
                 if not profile_success:
+                    success = False
+            
+            # Run differences if requested
+            if run_differences:
+                print(f">>> Executing differences mode...", flush=True, file=sys.stderr)
+                diff_success = generate_differences(
+                    output_dir=args.output_dir,
+                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                )
+                
+                if not diff_success:
+                    success = False
+            
+            # Run FWHM if requested
+            if run_fwhm:
+                print(f">>> Executing FWHM mode...", flush=True, file=sys.stderr)
+                fwhm_success = generate_fwhm(
+                    output_dir=args.output_dir,
+                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                )
+                
+                if not fwhm_success:
+                    success = False
+            
+            # Run differences if requested
+            if run_differences:
+                print(f">>> Executing differences mode...", flush=True, file=sys.stderr)
+                diff_success = generate_differences(
+                    output_dir=args.output_dir,
+                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                )
+                
+                if not diff_success:
+                    success = False
+            
+            # Run FWHM if requested
+            if run_fwhm:
+                print(f">>> Executing FWHM mode...", flush=True, file=sys.stderr)
+                fwhm_success = generate_fwhm(
+                    output_dir=args.output_dir,
+                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                )
+                
+                if not fwhm_success:
                     success = False
             
             if not success:
