@@ -65,18 +65,74 @@ def _apply_txt_config(config_dict: dict) -> None:
     if not config_dict:
         return
     
-    # Paths
+    # Paths - support single values or comma-separated lists
     if "processed_root" in config_dict:
-        Config.PROCESSED_ROOT = config_dict["processed_root"]
+        value = config_dict["processed_root"].strip()
+        if value:
+            # Check if comma-separated (multiple values)
+            if "," in value:
+                Config.PROCESSED_ROOTS = [p.strip() for p in value.split(",") if p.strip()]
+            else:
+                Config.PROCESSED_ROOTS = [value]
+        else:
+            Config.PROCESSED_ROOTS = []
+    
     if "raw_root" in config_dict:
-        Config.RAW_ROOT = config_dict["raw_root"]
+        value = config_dict["raw_root"].strip()
+        if value:
+            if "," in value:
+                Config.RAW_ROOTS = [p.strip() for p in value.split(",") if p.strip()]
+            else:
+                Config.RAW_ROOTS = [value]
+        else:
+            Config.RAW_ROOTS = []
+    
     if "log_file" in config_dict:
-        Config.LOG_FILE = config_dict["log_file"]
+        value = config_dict["log_file"].strip()
+        if value:
+            if "," in value:
+                Config.LOG_FILES = [p.strip() for p in value.split(",") if p.strip()]
+            else:
+                Config.LOG_FILES = [value]
+        else:
+            Config.LOG_FILES = []
+    
     if "output_dir" in config_dict:
         Config.OUTPUT_DIR = config_dict["output_dir"]
+    
     if "database_path" in config_dict:
-        db_path = config_dict["database_path"]
-        Config.DATABASE_PATH = db_path if db_path.lower() not in ("null", "none", "") else None
+        value = config_dict["database_path"].strip()
+        if value:
+            if "," in value:
+                db_paths = [p.strip() for p in value.split(",") if p.strip()]
+                Config.DATABASE_PATHS = [p if p.lower() not in ("null", "none", "") else None for p in db_paths]
+            else:
+                db_path = value if value.lower() not in ("null", "none", "") else None
+                Config.DATABASE_PATHS = [db_path] if db_path else []
+        else:
+            Config.DATABASE_PATHS = []
+    
+    # Legacy single-value support (for backward compatibility)
+    # Set single values from lists if only one item
+    if hasattr(Config, 'PROCESSED_ROOTS') and len(Config.PROCESSED_ROOTS) == 1:
+        Config.PROCESSED_ROOT = Config.PROCESSED_ROOTS[0]
+    elif hasattr(Config, 'PROCESSED_ROOTS') and len(Config.PROCESSED_ROOTS) > 1:
+        Config.PROCESSED_ROOT = Config.PROCESSED_ROOTS[0]  # Default to first for backward compatibility
+    
+    if hasattr(Config, 'RAW_ROOTS') and len(Config.RAW_ROOTS) == 1:
+        Config.RAW_ROOT = Config.RAW_ROOTS[0]
+    elif hasattr(Config, 'RAW_ROOTS') and len(Config.RAW_ROOTS) > 1:
+        Config.RAW_ROOT = Config.RAW_ROOTS[0]
+    
+    if hasattr(Config, 'LOG_FILES') and len(Config.LOG_FILES) == 1:
+        Config.LOG_FILE = Config.LOG_FILES[0]
+    elif hasattr(Config, 'LOG_FILES') and len(Config.LOG_FILES) > 1:
+        Config.LOG_FILE = Config.LOG_FILES[0]
+    
+    if hasattr(Config, 'DATABASE_PATHS') and len(Config.DATABASE_PATHS) == 1:
+        Config.DATABASE_PATH = Config.DATABASE_PATHS[0]
+    elif hasattr(Config, 'DATABASE_PATHS') and len(Config.DATABASE_PATHS) > 1:
+        Config.DATABASE_PATH = Config.DATABASE_PATHS[0]
     
     # Processing parameters
     if "timestamp_tolerance" in config_dict:
@@ -198,26 +254,42 @@ class Config:
     # Directory Paths
     # ============================================================================
     
-    # Root directory containing processed data files
+    # Root directory containing processed data files (single value, for backward compatibility)
     # Structure: Wind/YYYY-MM-DD/MM-DD_HHh/MM-DD_HH-##/
     # Each leaf folder contains: _Peak.txt, _Spectrum.txt, _Wind.txt
     PROCESSED_ROOT: ClassVar[str] = r"G:\Raymetrics_Tests\BOMA2025\20250922\Wind"
     
-    # Root directory containing raw spectra files
+    # Multiple processed root directories (comma-separated in config.txt)
+    # Each entry corresponds to one dataset configuration
+    PROCESSED_ROOTS: ClassVar[list[str]] = []
+    
+    # Root directory containing raw spectra files (single value, for backward compatibility)
     # Structure: Wind/YYYY-MM-DD/MM-DD_HHh/MM-DD_HH-##/
     # Each leaf folder contains: spectra_*.txt files
     RAW_ROOT: ClassVar[str] = r"G:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind"
     
-    # Path to the log file containing azimuth, elevation, and timestamps
+    # Multiple raw root directories (comma-separated in config.txt)
+    # Each entry corresponds to one dataset configuration
+    RAW_ROOTS: ClassVar[list[str]] = []
+    
+    # Path to the log file containing azimuth, elevation, and timestamps (single value, for backward compatibility)
     # Format: Three rows - [azimuth, elevation, timestamps, ...]
     LOG_FILE: ClassVar[str] = r"G:\Raymetrics_Tests\BOMA2025\20250922\output.txt"
+    
+    # Multiple log file paths (comma-separated in config.txt)
+    # Each entry corresponds to one dataset configuration
+    LOG_FILES: ClassVar[list[str]] = []
     
     # Output directory for debug files, CSV exports, etc.
     OUTPUT_DIR: ClassVar[str] = "timestamp_debug_output"
     
-    # Database file path for storing aggregated data
+    # Database file path for storing aggregated data (single value, for backward compatibility)
     # If None, database storage is disabled
     DATABASE_PATH: ClassVar[str | None] = "data/cuav_data.db"
+    
+    # Multiple database file paths (comma-separated in config.txt)
+    # Each entry corresponds to one dataset configuration
+    DATABASE_PATHS: ClassVar[list[str | None]] = []
     
     # ============================================================================
     # Processing Parameters

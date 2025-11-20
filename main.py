@@ -311,12 +311,17 @@ def get_logfile_basename() -> str:
     """
     Get the basename of the logfile (without extension) for creating output subdirectories.
     
+    If multiple log files are configured, uses the first one.
+    
     Returns
     -------
     str
         Basename of logfile without extension, or 'output' if logfile not configured
     """
-    log_file = Config.get_log_file_path()
+    log_files = Config.get_log_file_paths()
+    if len(log_files) == 0:
+        return "output"
+    log_file = log_files[0]
     if log_file is None or not log_file.exists():
         return "output"
     return log_file.stem

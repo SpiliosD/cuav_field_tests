@@ -6,11 +6,22 @@
 # Directory Paths
 # All paths can be absolute (e.g., D:\path\to\dir) or relative to the current working directory
 # Absolute paths are recommended for portability across different execution contexts
-processed_root=D:\Raymetrics_Tests\BOMA2025\20250922\Wind
-raw_root=D:\Raymetrics_Tests\BOMA2025\RawSpectra_txt\20250922\Spectra\User\20250922\Wind
-log_file=D:\Raymetrics_Tests\BOMA2025\20250922\output.txt
+# 
+# Support for multiple datasets: use comma-separated lists for multiple values
+# Each position in the comma-separated lists corresponds to one dataset configuration
+# Example:
+#   processed_root=path1,path2,path3
+#   raw_root=raw1,raw2,raw3
+#   log_file=log1.txt,log2.txt,log3.txt
+#   database_path=db1.db,db2.db,db3.db
+# This creates 3 dataset configurations: (path1,raw1,log1.txt,db1.db), (path2,raw2,log2.txt,db2.db), etc.
+# 
+# Single values (no commas) work as before for backward compatibility
+processed_root=D:\Raymetrics_Tests\BOMA2025\20250923\Wind
+raw_root=D:\Raymetrics_Tests\BOMA2025\20250923\Spectra\User\20250923\Wind
+log_file=D:\Raymetrics_Tests\BOMA2025\20250923\output8.txt
 output_dir=timestamp_debug_output
-database_path=data/output.db
+database_path=data/output8.db
 
 # Processing Parameters
 timestamp_tolerance=0.0001
