@@ -289,12 +289,19 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
          "are stored as JSON strings."),
         ("<b>7. Visualization:</b>", 
          "Query database, extract range-resolved values at specific ranges, aggregate by " 
-         "azimuth/elevation, and generate heatmaps."),
+         "azimuth/elevation, and generate heatmaps. Output files are organized into parameter-specific " 
+         "subfolders (wind_heatmaps/, snr_heatmaps/, etc.) within visualization_output/<logfile_basename>/."),
         ("<b>8. Single-Profile Processing (Mode 3):</b>", 
          "Process range-resolved power density spectra to compute SNR and wind profiles. " 
          "For each timestamp, compute frequencies from FFT size and sampling rate, find maximum " 
          "SNR frequency for each range, compute wind speed using Doppler lidar equation, and " 
-         "store profiles in database."),
+         "store profiles in database. Output saved to single_profile/ subfolder."),
+        ("<b>9. Differences Processing (Mode 4):</b>", 
+         "Compute sequential differences in SNR and wind between adjacent range pairs. " 
+         "Output saved to snr_difference/ and wind_difference/ subfolders."),
+        ("<b>10. FWHM Processing (Mode 5):</b>", 
+         "Compute Full Width at Half Maximum of dominant frequency peaks. " 
+         "Output saved to fwhm/ subfolder."),
     ]
     
     for stage_title, stage_desc in stages:
@@ -567,8 +574,27 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         body_style
     ))
     story.append(Paragraph(
-        "Output files are saved in a subdirectory named after the logfile (excluding extension) " 
-        "inside the visualization_output directory.",
+        "Output files are organized into subfolders within visualization_output/<logfile_basename>/:",
+        body_style
+    ))
+    output_subfolders = [
+        "wind_heatmaps/ - Wind speed heatmaps",
+        "snr_heatmaps/ - SNR (peak) heatmaps",
+        "spectrum_heatmaps/ - Spectrum heatmaps",
+        "single_profile/ - SNR, wind, and dominant frequency profile plots",
+        "snr_difference/ - SNR difference heatmaps between sequential ranges",
+        "wind_difference/ - Wind difference heatmaps between sequential ranges",
+        "fwhm/ - FWHM heatmaps of dominant frequency peaks",
+    ]
+    for folder in output_subfolders:
+        story.append(Paragraph(f"  • {folder}", body_style))
+    
+    story.append(Spacer(1, 0.15 * inch))
+    story.append(Paragraph(
+        "<b>Range Notation Support:</b> The requested_range_indices parameter supports flexible " 
+        "range notation. Single values can be specified as comma-separated lists (e.g., 1,2,3). " 
+        "Ranges can be specified using dash notation (e.g., 1-50 expands to 1,2,3,...,50). Mixed " 
+        "formats are also supported (e.g., 1,4-10,8 expands to 1,4,5,6,7,8,9,10,8).",
         body_style
     ))
     story.append(PageBreak())
@@ -604,8 +630,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         ]),
         ("<b>Visualization Parameters:</b>", [
             "range_step: Spacing between range bins (default: 48.0 m)",
-            "starting_range: Starting range for profiles (default: -1400.0 m)",
-            "requested_ranges: Comma-separated ranges to visualize (e.g., 100,200,300)",
+            "starting_range_index: Index of range bin corresponding to 0 m (default: 0)",
+            "requested_range_indices: Range notation supported (e.g., 1-50, 1,4-10,8)",
             "heatmap_colormap: Matplotlib colormap name (default: viridis)",
             "heatmap_format: Image format (default: png)",
         ]),
@@ -619,6 +645,11 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
             "profile_frequency_interval: Allowable frequency range \"min,max\" in Hz (default: \"0,50000\")",
             "profile_frequency_shift: Frequency shift for Doppler equation in Hz (default: 0.0)",
             "profile_laser_wavelength: Laser wavelength in meters (default: 1.55e-6)",
+        ]),
+        ("<b>Debug Mode:</b>", [
+            "debug_mode: Enable verbose debug output (true/false, default: false)",
+            "When true: prints detailed database content, matching details, array structures",
+            "When false: prints only essential information (normal mode)",
         ]),
     ]
     
@@ -784,7 +815,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     
     # Build PDF
     doc.build(story)
-    print(f"✓ PDF documentation generated: {output_path}")
+    print(f"PDF documentation generated: {output_path}")
 
 
 if __name__ == "__main__":

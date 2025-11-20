@@ -59,6 +59,16 @@ Edit `config.txt` to configure:
 - Database path
 - Visualization parameters
 - Run modes
+- Debug mode (true/false for verbose output)
+
+### Range Notation
+
+The `requested_range_indices` parameter supports flexible range notation:
+- Single values: `1, 2, 3`
+- Ranges: `1-50` (expands to 1, 2, 3, ..., 50)
+- Mixed: `1, 4-10, 8` (expands to 1, 4, 5, 6, 7, 8, 9, 10, 8)
+
+Example: `requested_range_indices=1-80` will process indices 1 through 80.
 
 ## Modes
 
@@ -69,3 +79,25 @@ Edit `config.txt` to configure:
 - **FWHM Mode**: Compute FWHM of dominant frequency peaks (`--fwhm`)
 
 Modes can be combined (except test mode).
+
+## Output Organization
+
+All visualization outputs are organized into subfolders within `visualization_output/<logfile_basename>/`:
+
+- `wind_heatmaps/` - Wind speed heatmaps
+- `snr_heatmaps/` - SNR (peak) heatmaps
+- `spectrum_heatmaps/` - Spectrum heatmaps
+- `single_profile/` - SNR, wind, and dominant frequency profile plots
+- `snr_difference/` - SNR difference heatmaps between sequential ranges
+- `wind_difference/` - Wind difference heatmaps between sequential ranges
+- `fwhm/` - FWHM heatmaps of dominant frequency peaks
+
+## Debug Mode
+
+Set `debug_mode=true` in `config.txt` for verbose output including:
+- Detailed database content information
+- Matching details for timestamps
+- Array structure and bounds checking
+- Range extraction calculations
+
+Set `debug_mode=false` for normal output (only essential information).
