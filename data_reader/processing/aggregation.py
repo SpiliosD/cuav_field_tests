@@ -254,7 +254,8 @@ def build_timestamp_data_dict(
                 raw_file = raw_file_path
             elif timestamp_idx is not None:
                 # Fallback to positional matching: nth timestamp = nth file
-                raw_files = sorted(raw_dir_path.glob("spectra_*.txt"))
+                # Only use .txt files, ignore .bin files even if they have same base name
+                raw_files = sorted([f for f in raw_dir_path.glob("spectra_*.txt") if f.suffix.lower() == '.txt'])
                 if timestamp_idx < len(raw_files):
                     raw_file = raw_files[timestamp_idx]
             
@@ -425,7 +426,8 @@ def _find_raw_file_for_timestamp(
         Path to the matching raw file, or None if not found
     """
     # Get sorted raw files
-    raw_files = sorted(raw_dir.glob("spectra_*.txt"))
+    # Only use .txt files, ignore .bin files even if they have same base name
+    raw_files = sorted([f for f in raw_dir.glob("spectra_*.txt") if f.suffix.lower() == '.txt'])
     if not raw_files:
         return None
     
