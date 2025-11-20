@@ -55,11 +55,15 @@ starting_range_index=28
 # Requested range indices: comma-separated list of range bin indices relative to starting_range_index
 # These are offsets from the starting_range_index (which is at 0 m)
 # The actual range bin indices are computed as: starting_range_index + requested_range_index
-# Example: if starting_range_index=28 and requested_range_indices=1,2,3, then:
-#   - Actual indices: 28+1=29, 28+2=30, 28+3=31
-#   - Actual distances: 48m, 96m, 144m (displayed in plot titles)
+# Supports:
+#   - Single values: "1, 2, 3"
+#   - Ranges: "1-50" (expands to 1, 2, 3, ..., 50)
+#   - Mixed: "1, 4-10, 8" (expands to 1, 4, 5, 6, 7, 8, 9, 10, 8)
+# Example: if starting_range_index=28 and requested_range_indices=1-43, then:
+#   - Actual indices: 28+1=29, 28+2=30, ..., 28+43=71
+#   - Actual distances: 48m, 96m, ..., 2064m (displayed in plot titles)
 # The actual distances will be computed and displayed in plot titles
-requested_range_indices=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43
+requested_range_indices=1-43
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode
@@ -93,3 +97,8 @@ profile_frequency_shift=80000000
 # Laser wavelength for Doppler lidar equation (meters)
 profile_laser_wavelength=1.55e-6
 
+# Debug Mode
+# Set to 'true' or 'false' (case-insensitive)
+# When true: prints verbose debug information including detailed database content, matching details, etc.
+# When false: prints only essential information (normal mode)
+debug_mode=false

@@ -199,8 +199,8 @@ def create_or_rebuild_database() -> bool:
         # Filter matches by log timestamps
         print("  Filtering matches by log timestamps...", flush=True)
         
-        # Debug: show sample timestamps before filtering
-        if len(matches) > 0:
+        # Debug: show sample timestamps before filtering (only in debug mode)
+        if Config.is_debug_mode() and len(matches) > 0:
             sample_match_ts = float(matches[0][0])
             from data_reader.parsing.logs import extract_log_timestamps
             from data_reader.parsing.timestamp_correction import correct_processed_timestamp
@@ -379,10 +379,18 @@ def generate_heatmaps(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Create/rebuild database first
-    if not create_or_rebuild_database():
-        print("✗ ERROR: Failed to create database. Cannot generate heatmaps.", flush=True)
+    # Get database path (should already exist from main() if multimode, or will be created if single mode)
+    # Check if database exists, create if needed (for single-mode runs)
+    db_path = Config.get_database_path()
+    if db_path is None:
+        print("✗ ERROR: Database path not configured in config.txt", flush=True)
         return False
+    
+    if not db_path.exists():
+        print("Database does not exist. Creating database first...", flush=True)
+        if not create_or_rebuild_database():
+            print("✗ ERROR: Failed to create database. Cannot generate heatmaps.", flush=True)
+            return False
     
     # Get database path (should exist now)
     db_path = Config.get_database_path()
@@ -422,6 +430,10 @@ def generate_heatmaps(
         # Create subdirectory named after logfile (without extension)
         logfile_basename = get_logfile_basename()
         output_dir = base_output_dir / logfile_basename
+    else:
+        # Even if output_dir is provided, append logfile basename subdirectory
+        logfile_basename = get_logfile_basename()
+        output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -443,6 +455,20 @@ def generate_heatmaps(
     
     try:
         print("Generating heatmaps...")
+        # Create subfolders for each parameter type
+        parameter_subdirs = {}
+        for param in parameters_list:
+            if param == "peak":
+                subfolder_name = "snr_heatmaps"  # Use "snr" instead of "peak" for clarity
+            elif param == "wind":
+                subfolder_name = "wind_heatmaps"
+            elif param == "spectrum":
+                subfolder_name = "spectrum_heatmaps"
+            else:
+                subfolder_name = f"{param}_heatmaps"
+            parameter_subdirs[param] = output_dir / subfolder_name
+            parameter_subdirs[param].mkdir(parents=True, exist_ok=True)
+        
         results = create_heatmaps(
             db_path=db_path,
             range_step=range_step,
@@ -450,6 +476,7 @@ def generate_heatmaps(
             requested_ranges=requested_ranges,
             parameters=parameters_list,
             output_dir=output_dir,
+            parameter_subdirs=parameter_subdirs,  # Pass parameter-specific subdirectories
             colormap=colormap,
             save_format=save_format,
         )
@@ -548,7 +575,7 @@ def generate_differences(
         print("✗ ERROR: Database path not configured in config.txt", flush=True)
         return False
     
-    # Check if database exists
+    # Check if database exists (should already exist from main() if multimode)
     if not db_path.exists():
         print("✗ ERROR: Database does not exist. Please run profiles mode first to generate profile data.", flush=True)
         return False
@@ -566,6 +593,10 @@ def generate_differences(
         base_output_dir = Config.get_visualization_output_dir_path()
         logfile_basename = get_logfile_basename()
         output_dir = base_output_dir / logfile_basename
+    else:
+        # Even if output_dir is provided, append logfile basename subdirectory
+        logfile_basename = get_logfile_basename()
+        output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -598,6 +629,10 @@ def generate_differences(
         print()
         
         # Step 2: Generate heatmaps for SNR differences
+        # Create subfolder for SNR differences
+        snr_diff_subdir = output_dir / "snr_difference"
+        snr_diff_subdir.mkdir(parents=True, exist_ok=True)
+        
         print("Generating SNR difference heatmaps...")
         snr_results = create_difference_heatmaps(
             db_path=db_path,
@@ -605,12 +640,16 @@ def generate_differences(
             starting_range=starting_range,
             requested_ranges=requested_ranges,
             difference_type="snr",
-            output_dir=output_dir,
+            output_dir=snr_diff_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
         )
         
         # Step 3: Generate heatmaps for wind differences
+        # Create subfolder for wind differences
+        wind_diff_subdir = output_dir / "wind_difference"
+        wind_diff_subdir.mkdir(parents=True, exist_ok=True)
+        
         print("Generating wind difference heatmaps...")
         wind_results = create_difference_heatmaps(
             db_path=db_path,
@@ -618,7 +657,7 @@ def generate_differences(
             starting_range=starting_range,
             requested_ranges=requested_ranges,
             difference_type="wind",
-            output_dir=output_dir,
+            output_dir=wind_diff_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
         )
@@ -675,7 +714,7 @@ def generate_fwhm(
         print("✗ ERROR: Database path not configured in config.txt", flush=True)
         return False
     
-    # Check if database exists
+    # Check if database exists (should already exist from main() if multimode)
     if not db_path.exists():
         print("✗ ERROR: Database does not exist. Please run profiles mode first to generate profile data.", flush=True)
         return False
@@ -698,6 +737,10 @@ def generate_fwhm(
         base_output_dir = Config.get_visualization_output_dir_path()
         logfile_basename = get_logfile_basename()
         output_dir = base_output_dir / logfile_basename
+    else:
+        # Even if output_dir is provided, append logfile basename subdirectory
+        logfile_basename = get_logfile_basename()
+        output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -735,13 +778,17 @@ def generate_fwhm(
         print()
         
         # Step 2: Generate heatmaps
+        # Create subfolder for FWHM heatmaps
+        fwhm_subdir = output_dir / "fwhm"
+        fwhm_subdir.mkdir(parents=True, exist_ok=True)
+        
         print("Generating FWHM heatmaps...")
         results = create_fwhm_heatmaps(
             db_path=db_path,
             range_step=range_step,
             starting_range=starting_range,
             requested_ranges=requested_ranges,
-            output_dir=output_dir,
+            output_dir=fwhm_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
         )
@@ -803,7 +850,7 @@ def generate_profiles(
         print("✗ ERROR: Database path not configured in config.txt", flush=True)
         return False
     
-    # Check if database exists, if not create it
+    # Check if database exists, create if needed (for single-mode runs)
     if not db_path.exists():
         print("Database does not exist. Creating database first...", flush=True)
         if not create_or_rebuild_database():
@@ -826,6 +873,10 @@ def generate_profiles(
         # Create subdirectory named after logfile (without extension)
         logfile_basename = get_logfile_basename()
         output_dir = base_output_dir / logfile_basename
+    else:
+        # Even if output_dir is provided, append logfile basename subdirectory
+        logfile_basename = get_logfile_basename()
+        output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -866,12 +917,16 @@ def generate_profiles(
         print()
         
         # Step 2: Generate visualizations
+        # Create subfolder for single profiles
+        profiles_subdir = output_dir / "single_profile"
+        profiles_subdir.mkdir(parents=True, exist_ok=True)
+        
         print("Generating profile visualizations...")
         results = create_profile_visualizations(
             db_path=db_path,
             range_step=range_step,
             starting_range=starting_range,
-            output_dir=output_dir,
+            output_dir=profiles_subdir,
             save_format=save_format,
         )
         
@@ -1126,6 +1181,17 @@ Note:
         else:
             # Execute heatmaps and/or profiles (can run simultaneously)
             success = True
+            
+            # Create/rebuild database ONCE before running any modes
+            # This avoids rebuilding the database multiple times in multimode runs
+            print("=" * 70, flush=True)
+            print("Creating/Rebuilding Database (if needed)", flush=True)
+            print("=" * 70, flush=True)
+            print(flush=True)
+            if not create_or_rebuild_database():
+                print("✗ ERROR: Failed to create database. Cannot continue.", flush=True)
+                sys.exit(1)
+            print(flush=True)
             
             # Run profiles FIRST if requested (needed for differences and FWHM)
             if run_profiles:

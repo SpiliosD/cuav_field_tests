@@ -97,11 +97,15 @@ def build_timestamp_data_dict(
     
     log_azimuth = log_data[0]
     log_elevation = log_data[1]
-    log_timestamps = log_data[2]
+    log_timestamps_raw = log_data[2]
+
+    # Correct log timestamps (they have the same 2091->2025 year issue as processed files)
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+    log_timestamps_float = np.asarray(log_timestamps_raw, dtype=float)
+    log_timestamps = np.array([correct_processed_timestamp(ts) for ts in log_timestamps_float])
 
     # Normalize log timestamps for comparison
-    log_timestamps_float = np.asarray(log_timestamps, dtype=float)
-    log_timestamps_normalized = np.round(log_timestamps_float, decimals=6)
+    log_timestamps_normalized = np.round(log_timestamps, decimals=6)
 
     # Dictionary to store results
     result: dict[str, dict[str, Any]] = {}
@@ -209,6 +213,15 @@ def build_timestamp_data_dict(
             if differences[match_idx] <= atol:
                 entry["azimuth"] = float(log_azimuth[match_idx])
                 entry["elevation"] = float(log_elevation[match_idx])
+            # Debug: Show first few matches for verification (only in debug mode)
+            from config import Config
+            if Config.is_debug_mode() and len(result) < 3:
+                if entry["azimuth"] is not None:
+                    print(f"  Debug: Matched log entry {match_idx}: azimuth={entry['azimuth']:.2f}, elevation={entry['elevation']:.2f}, "
+                          f"diff={differences[match_idx]:.6f} s")
+                else:
+                    print(f"  Debug: No log match for processed_ts={processed_ts_normalized}, "
+                          f"closest log_ts={log_timestamps_normalized[match_idx]:.6f}, diff={differences[match_idx]:.6f} s")
 
             # Match with processed files (peak, spectrum, wind) by index
             # Find the index of this timestamp in processed_timestamps_list

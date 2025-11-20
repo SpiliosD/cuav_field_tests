@@ -76,11 +76,19 @@ def extract_range_values(
         index_float = (req_range - starting_range) / range_step
         index = int(np.round(index_float))
         
+        # Debug output (only in debug mode)
+        from config import Config
+        if Config.is_debug_mode() and len(result) == 0:  # Only print for first range to avoid spam
+            print(f"   Debug extract_range_values: requested_range={req_range}m, starting_range={starting_range}m, range_step={range_step}m")
+            print(f"   Debug: calculated index={index} (from {index_float}), array_length={len(profile_array)}")
+        
         # Check bounds
         if 0 <= index < len(profile_array):
             result[req_range] = float(profile_array[index])
         else:
             result[req_range] = None
+            if Config.is_debug_mode() and len(result) == 0:  # Only print for first range
+                print(f"   Debug: Index {index} is out of bounds for array of length {len(profile_array)}")
     
     return result
 
@@ -256,6 +264,7 @@ def create_heatmaps(
     requested_ranges: list[float],
     parameters: list[str] | None = None,
     output_dir: str | Path | None = None,
+    parameter_subdirs: dict[str, Path] | None = None,
     azimuth_bins: int | None = None,
     elevation_bins: int | None = None,
     colormap: str = "viridis",
@@ -352,9 +361,48 @@ def create_heatmaps(
         print("⚠ WARNING: No records found in database. Cannot generate heatmaps.")
         return {}
     
-    # Check if records have azimuth/elevation data
-    records_with_az_el = sum(1 for r in records if r.get("azimuth") is not None and r.get("elevation") is not None)
-    print(f"Records with azimuth/elevation data: {records_with_az_el} / {len(records)}")
+    # Debug: Check database contents (only in debug mode)
+    from config import Config
+    if Config.is_debug_mode():
+        print("\n=== Database Content Debug ===")
+        print(f"Total records: {len(records)}")
+        
+        # Check what parameters are available
+        for param in parameters:
+            records_with_param = sum(1 for r in records if r.get(param) is not None)
+            print(f"Records with '{param}' data: {records_with_param} / {len(records)}")
+            if records_with_param > 0:
+                # Sample a few records to check array structure
+                sample_count = min(3, records_with_param)
+                sample_idx = 0
+                for r in records:
+                    if r.get(param) is not None:
+                        param_array = r.get(param)
+                        if isinstance(param_array, np.ndarray):
+                            print(f"  Sample record {sample_idx}: '{param}' array shape={param_array.shape}, dtype={param_array.dtype}")
+                            print(f"  Sample record {sample_idx}: '{param}' array length={len(param_array)}")
+                            if len(param_array) > 0:
+                                print(f"  Sample record {sample_idx}: '{param}' first value={param_array[0]}, last value={param_array[-1]}")
+                        else:
+                            print(f"  Sample record {sample_idx}: '{param}' is not a numpy array (type: {type(param_array)})")
+                        sample_idx += 1
+                        if sample_idx >= sample_count:
+                            break
+        
+        # Check if records have azimuth/elevation data
+        records_with_az_el = sum(1 for r in records if r.get("azimuth") is not None and r.get("elevation") is not None)
+        print(f"Records with azimuth/elevation data: {records_with_az_el} / {len(records)}")
+        if records_with_az_el > 0:
+            # Sample azimuth/elevation values
+            sample_count = min(3, records_with_az_el)
+            sample_idx = 0
+            for r in records:
+                if r.get("azimuth") is not None and r.get("elevation") is not None:
+                    print(f"  Sample record {sample_idx}: azimuth={r.get('azimuth')}, elevation={r.get('elevation')}")
+                    sample_idx += 1
+                    if sample_idx >= sample_count:
+                        break
+        print("=== End Database Debug ===\n")
     
     results = {}
     
@@ -374,11 +422,26 @@ def create_heatmaps(
             
             if len(azimuth) == 0:
                 print(f"⚠ No data found for {parameter} at range {requested_range} m")
-                print(f"   (This may be normal if no measurements exist at this exact range)")
-                print(f"   Debug: range_step={range_step}, starting_range={starting_range}")
-                # Check if any records have this parameter
-                records_with_param = sum(1 for r in records if r.get(parameter) is not None)
-                print(f"   Records with {parameter} data: {records_with_param} / {len(records)}")
+                # Debug output (only in debug mode)
+                if Config.is_debug_mode():
+                    print(f"   (This may be normal if no measurements exist at this exact range)")
+                    print(f"   Debug: range_step={range_step}, starting_range={starting_range}")
+                    # Check if any records have this parameter
+                    records_with_param = sum(1 for r in records if r.get(parameter) is not None)
+                    print(f"   Records with {parameter} data: {records_with_param} / {len(records)}")
+                    # Check if records have azimuth/elevation
+                    records_with_az_el = sum(1 for r in records if r.get("azimuth") is not None and r.get("elevation") is not None)
+                    print(f"   Records with azimuth/elevation: {records_with_az_el} / {len(records)}")
+                    # Sample a few records to see their array lengths
+                    sample_count = min(3, len(records))
+                    for i, r in enumerate(records[:sample_count]):
+                        param_array = r.get(parameter)
+                        if param_array is not None:
+                            print(f"   Sample record {i}: {parameter} array length = {len(param_array)}")
+                            # Calculate what index would be used
+                            index_float = (requested_range - starting_range) / range_step
+                            index = int(np.round(index_float))
+                            print(f"   Sample record {i}: calculated index = {index} for range {requested_range}m")
                 continue
             
             # Create gridded heatmap data
@@ -404,7 +467,11 @@ def create_heatmaps(
             
             # Create and save heatmap if output directory is provided
             if output_dir is not None:
-                output_path = Path(output_dir)
+                # Use parameter-specific subdirectory if provided, otherwise use base output_dir
+                if parameter_subdirs is not None and parameter in parameter_subdirs:
+                    output_path = Path(parameter_subdirs[parameter])
+                else:
+                    output_path = Path(output_dir)
                 output_path.mkdir(parents=True, exist_ok=True)
                 
                 fig, ax = plt.subplots(figsize=(10, 8))

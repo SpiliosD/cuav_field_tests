@@ -184,6 +184,11 @@ def _apply_txt_config(config_dict: dict) -> None:
         Config.PROFILE_FREQUENCY_SHIFT = float(config_dict["profile_frequency_shift"])
     if "profile_laser_wavelength" in config_dict:
         Config.PROFILE_LASER_WAVELENGTH = float(config_dict["profile_laser_wavelength"])
+    
+    # Debug mode
+    if "debug_mode" in config_dict:
+        debug_str = config_dict["debug_mode"].lower().strip()
+        Config.DEBUG_MODE = debug_str in ("true", "1", "yes", "on")
 
 
 class Config:
@@ -284,6 +289,15 @@ class Config:
     # Maximum number of entries to process in aggregation test
     # Set to None to process all entries
     MAX_TEST_ENTRIES: ClassVar[int | None] = 10
+    
+    # ============================================================================
+    # Debug Mode
+    # ============================================================================
+    
+    # Enable verbose debug output
+    # When True: prints detailed debug information (database content, matching details, etc.)
+    # When False: prints only essential information (normal mode)
+    DEBUG_MODE: ClassVar[bool] = False
     
     # ============================================================================
     # Visualization Parameters
@@ -405,9 +419,26 @@ class Config:
         return Path(cls.VISUALIZATION_OUTPUT_DIR).expanduser().resolve()
     
     @classmethod
+    def is_debug_mode(cls) -> bool:
+        """
+        Check if debug mode is enabled.
+        
+        Returns
+        -------
+        bool
+            True if debug mode is enabled, False otherwise
+        """
+        return cls.DEBUG_MODE
+    
+    @classmethod
     def get_requested_range_indices(cls) -> list[int]:
         """
         Parse requested_range_indices string into a list of relative indices.
+        
+        Supports:
+        - Single values: "1, 2, 3"
+        - Ranges: "1-50" (expands to 1, 2, 3, ..., 50)
+        - Mixed: "1, 4-10, 8" (expands to 1, 4, 5, 6, 7, 8, 9, 10, 8)
         
         These are offsets from starting_range_index.
         
@@ -415,15 +446,51 @@ class Config:
         -------
         list[int]
             List of relative range indices (offsets from starting_range_index)
+            Duplicates are preserved (can be removed by caller if needed)
         """
         ranges_str = cls.REQUESTED_RANGE_INDICES.strip()
         if not ranges_str:
             return []
-        try:
-            return [int(r.strip()) for r in ranges_str.split(",") if r.strip()]
-        except ValueError:
-            print(f"⚠ Warning: Could not parse requested_range_indices: {cls.REQUESTED_RANGE_INDICES}")
-            return []
+        
+        result = []
+        # Split by comma to get individual parts
+        parts = [p.strip() for p in ranges_str.split(",") if p.strip()]
+        
+        for part in parts:
+            try:
+                # Check if part contains a range (dash)
+                if "-" in part:
+                    # Parse range: "start-end"
+                    range_parts = part.split("-", 1)
+                    if len(range_parts) != 2:
+                        print(f"⚠ Warning: Invalid range format '{part}' in requested_range_indices. Skipping.")
+                        continue
+                    
+                    start_str = range_parts[0].strip()
+                    end_str = range_parts[1].strip()
+                    
+                    if not start_str or not end_str:
+                        print(f"⚠ Warning: Invalid range format '{part}' in requested_range_indices. Skipping.")
+                        continue
+                    
+                    start = int(start_str)
+                    end = int(end_str)
+                    
+                    # Handle both ascending and descending ranges
+                    if start <= end:
+                        # Normal range: 1-5 -> [1, 2, 3, 4, 5]
+                        result.extend(range(start, end + 1))
+                    else:
+                        # Reverse range: 5-1 -> [5, 4, 3, 2, 1]
+                        result.extend(range(start, end - 1, -1))
+                else:
+                    # Single value
+                    result.append(int(part))
+            except ValueError as e:
+                print(f"⚠ Warning: Could not parse '{part}' in requested_range_indices: {e}. Skipping.")
+                continue
+        
+        return result
     
     @classmethod
     def get_actual_range_indices(cls) -> list[int]:
