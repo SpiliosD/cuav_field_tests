@@ -215,18 +215,19 @@ def match_processed_and_raw(
         raw_folder = raw_base / relative_folder
 
         if not raw_folder.exists():
-            raise FileNotFoundError(
-                f"Missing raw folder for processed folder '{folder}': expected '{raw_folder}'",
-            )
+            print(f"⚠ WARNING: Missing raw folder for processed folder '{folder}'")
+            print(f"  Expected: '{raw_folder}'")
+            print(f"  Skipping this folder and continuing...")
+            continue
 
         processed_timestamps, original_timestamps_map = _read_timestamps_from_file(log_file)
         raw_files = _sorted_raw_files(raw_folder)
 
         if len(processed_timestamps) != len(raw_files):
-            raise ValueError(
-                "Mismatch between processed timestamps and raw files in "
-                f"folder '{folder}': {len(processed_timestamps)} vs {len(raw_files)}",
-            )
+            print(f"⚠ WARNING: Mismatch between processed timestamps and raw files in folder '{folder}'")
+            print(f"  Processed timestamps: {len(processed_timestamps)}, Raw files: {len(raw_files)}")
+            print(f"  Skipping this folder and continuing...")
+            continue
 
         for processed_ts, raw_path in zip(processed_timestamps, raw_files):
             raw_dt = timestamp_from_spectra_filename(raw_path)
