@@ -66,22 +66,7 @@ class MatchedEntry:
     raw_datetime: str
     raw_timestamp: str
     raw_path: str
-    original_timestamp: str | None
-
-    def __init__(
-        self,
-        *,
-        processed_timestamp: str,
-        raw_datetime: str,
-        raw_timestamp: str,
-        raw_path: str,
-        original_timestamp: str | None = None,
-    ):
-        self.processed_timestamp = processed_timestamp
-        self.raw_datetime = raw_datetime
-        self.raw_timestamp = raw_timestamp
-        self.raw_path = raw_path
-        self.original_timestamp = original_timestamp
+    original_timestamp: str | None = None
 
     def as_tuple(self) -> tuple[str, str, str, str]:
         return (
