@@ -367,9 +367,10 @@ class DataDatabase:
         timestamp : str | float
             Processed timestamp (will be converted to float)
         snr_profile : np.ndarray | None
-            SNR profile array (one value per range)
+            SNR profile array (one value per range) in dB units.
+            Values should already be converted using: 10 * log10(value)
         wind_profile : np.ndarray | None
-            Wind profile array (one value per range)
+            Wind profile array (one value per range) in m/s units
         dominant_frequency_profile : np.ndarray | None
             Dominant frequency profile array (one value per range, in Hz)
         """

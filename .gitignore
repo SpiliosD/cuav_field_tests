@@ -52,13 +52,6 @@ dmypy.json
 *.sqlite
 *.sqlite3
 
-# Output directories
-visualization_output/
-data/
-output/
-sandbox/output/
-sandbox/data/
-
 # Log files
 *.log
 

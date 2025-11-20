@@ -475,7 +475,10 @@ def process_single_profiles(
     1. Process range-resolved power density spectra
     2. Compute frequencies from FFT size and sampling rate
     3. Find frequency at maximum SNR for each range (within allowable interval)
-    4. Compute wind speed using coherent Doppler lidar equation
+    4. Convert SNR from decimal to dB using: 10 * log10(value)
+    5. Compute wind speed using coherent Doppler lidar equation
+    
+    Note: SNR values are stored and returned in dB units.
     
     Parameters
     ----------
@@ -605,11 +608,19 @@ def process_single_profiles(
                 
                 max_idx_in_interval = np.argmax(spectrum_in_interval)
                 max_freq_idx = freq_indices[max_idx_in_interval]
-                max_snr = spectrum[max_freq_idx]
+                max_snr_raw = spectrum[max_freq_idx]
                 max_frequency = frequencies[max_freq_idx]
                 
-                # Store SNR value
-                snr_profile[range_idx] = max_snr
+                # Convert SNR from decimal to dB: 10 * log10(value)
+                # This conversion is essential: SNR values are stored and plotted in dB units
+                # Handle zero or negative values to avoid log10 issues
+                if max_snr_raw > 0:
+                    max_snr_dB = 10.0 * np.log10(max_snr_raw)
+                else:
+                    max_snr_dB = np.nan  # Invalid SNR value (cannot take log of zero/negative)
+                
+                # Store SNR value in dB (will be saved to database in dB units)
+                snr_profile[range_idx] = max_snr_dB
                 
                 # Store dominant frequency value
                 dominant_frequency_profile[range_idx] = max_frequency
@@ -745,7 +756,7 @@ def create_profile_visualizations(
             ax.plot(ranges, snr_profile, alpha=0.6, linewidth=0.5)
         
         ax.set_xlabel("Range (m)", fontsize=12)
-        ax.set_ylabel("SNR", fontsize=12)
+        ax.set_ylabel("SNR (dB)", fontsize=12)
         ax.set_title("SNR Profiles (All Timestamps)", fontsize=14, fontweight="bold")
         ax.set_xlim(0, 3000)
         ax.grid(True, alpha=0.3)
@@ -834,8 +845,8 @@ def compute_sequential_differences(
     Compute differences between sequential range pairs for SNR and wind profiles.
     
     For each timestamp, computes the difference between consecutive ranges:
-    - SNR difference: SNR[i+1] - SNR[i] for each sequential pair
-    - Wind difference: Wind[i+1] - Wind[i] for each sequential pair
+    - SNR difference: SNR[i+1] - SNR[i] for each sequential pair (in dB)
+    - Wind difference: Wind[i+1] - Wind[i] for each sequential pair (in m/s)
     
     The differences are computed only for the ranges specified in requested_ranges.
     Results are stored in the database.
@@ -1270,7 +1281,12 @@ def create_difference_heatmaps(
             )
             
             cbar = plt.colorbar(im, ax=ax)
-            cbar.set_label(f"{difference_type.upper()} Difference (m/s)" if difference_type == 'wind' else f"{difference_type.upper()} Difference", rotation=270, labelpad=20)
+            if difference_type == 'wind':
+                cbar.set_label(f"{difference_type.upper()} Difference (m/s)", rotation=270, labelpad=20)
+            elif difference_type == 'snr':
+                cbar.set_label(f"{difference_type.upper()} Difference (dB)", rotation=270, labelpad=20)
+            else:
+                cbar.set_label(f"{difference_type.upper()} Difference", rotation=270, labelpad=20)
             
             ax.set_xlabel("Azimuth Angle (degrees)", fontsize=12)
             ax.set_ylabel("Elevation Angle (degrees)", fontsize=12)
