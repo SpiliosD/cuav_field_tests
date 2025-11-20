@@ -39,9 +39,27 @@ log_timestamp_column=2
 max_test_entries=10
 
 # Visualization Parameters
+# Range step: spacing between range bins in meters (e.g., 48.0 m)
 range_step=48.0
-starting_range=-1296
-requested_ranges=48,96,144,192,240,576,336,384,432,480,528,576,624,672,720,768,816,864,912,960,1008,1056,1104,1152,1200,1248,1296,1344,1392,1440,1488,1536,1584,1632,1680,1728,1776,1824,1872,1920,1968,2016
+
+# Starting range index: index of the range bin that corresponds to 0 meters
+# Previous bins have negative distances, later bins have positive distances
+# Formula: distance = (index - starting_range_index) * range_step
+# Example: if starting_range_index=28 and range_step=48, then:
+#   - Index 0: (0-28)*48 = -1344 m
+#   - Index 28: (28-28)*48 = 0 m (reference point)
+#   - Index 29: (29-28)*48 = 48 m
+#   - Index 30: (30-28)*48 = 96 m
+starting_range_index=28
+
+# Requested range indices: comma-separated list of range bin indices relative to starting_range_index
+# These are offsets from the starting_range_index (which is at 0 m)
+# The actual range bin indices are computed as: starting_range_index + requested_range_index
+# Example: if starting_range_index=28 and requested_range_indices=1,2,3, then:
+#   - Actual indices: 28+1=29, 28+2=30, 28+3=31
+#   - Actual distances: 48m, 96m, 144m (displayed in plot titles)
+# The actual distances will be computed and displayed in plot titles
+requested_range_indices=1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode

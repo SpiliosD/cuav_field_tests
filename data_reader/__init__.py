@@ -28,11 +28,8 @@ from data_reader.parsing.logs import read_log_files
 from data_reader.processing.aggregation import build_timestamp_data_dict
 from data_reader.processing.filters import filter_processed_array_by_timestamps
 from data_reader.processing.integration import build_and_save_to_database, load_from_database
-from data_reader.analysis.visualization import (
-    aggregate_azimuth_elevation_data,
-    create_heatmaps,
-    extract_range_values,
-)
+# Lazy import visualization functions to avoid circular imports
+# These will be imported on-demand when needed
 from data_reader.storage.database import (
     DataDatabase,
     init_database,
@@ -64,8 +61,30 @@ __all__ = [
     "save_timestamp_data",
     "query_timestamp",
     "query_timestamp_range",
+    # Visualization functions (lazy imported to avoid circular imports)
     "create_heatmaps",
     "extract_range_values",
     "aggregate_azimuth_elevation_data",
 ]
+
+# Lazy import helpers for visualization functions
+def _lazy_import_visualization():
+    """Lazy import visualization functions to avoid circular imports."""
+    from data_reader.analysis.visualization import (
+        aggregate_azimuth_elevation_data,
+        create_heatmaps,
+        extract_range_values,
+    )
+    return {
+        "aggregate_azimuth_elevation_data": aggregate_azimuth_elevation_data,
+        "create_heatmaps": create_heatmaps,
+        "extract_range_values": extract_range_values,
+    }
+
+# Make visualization functions available via lazy loading
+def __getattr__(name: str):
+    """Lazy import for visualization functions."""
+    if name in ("aggregate_azimuth_elevation_data", "create_heatmaps", "extract_range_values"):
+        return _lazy_import_visualization()[name]
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 

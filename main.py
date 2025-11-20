@@ -379,9 +379,6 @@ def generate_heatmaps(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Load configuration
-    Config.load_from_file(silent=False)
-    
     # Create/rebuild database first
     if not create_or_rebuild_database():
         print("✗ ERROR: Failed to create database. Cannot generate heatmaps.", flush=True)
@@ -399,7 +396,7 @@ def generate_heatmaps(
     
     # Get visualization parameters from config (or use provided)
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     
     if ranges is None:
         requested_ranges = Config.get_requested_ranges()
@@ -458,6 +455,15 @@ def generate_heatmaps(
         )
         
         print()
+        if len(results) == 0:
+            print("⚠ WARNING: No heatmaps were generated!")
+            print("   This could mean:")
+            print("   - No data exists at the requested ranges")
+            print("   - The database doesn't contain the required parameters")
+            print("   - Check that azimuth and elevation data is present in the database")
+            print()
+            return False
+        
         print(f"✓ Successfully generated {len(results)} heatmaps:")
         for key, data in results.items():
             param = data["parameter"]
@@ -536,9 +542,6 @@ def generate_differences(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Load configuration
-    Config.load_from_file(silent=False)
-    
     # Get database path
     db_path = Config.get_database_path()
     if db_path is None:
@@ -552,7 +555,7 @@ def generate_differences(
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     requested_ranges = Config.get_requested_ranges()
     
     if not requested_ranges:
@@ -666,9 +669,6 @@ def generate_fwhm(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Load configuration
-    Config.load_from_file(silent=False)
-    
     # Get database path
     db_path = Config.get_database_path()
     if db_path is None:
@@ -682,7 +682,7 @@ def generate_fwhm(
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     requested_ranges = Config.get_requested_ranges()
     
     # Get Mode 3 parameters from config (needed for FWHM computation)
@@ -797,9 +797,6 @@ def generate_profiles(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Load configuration
-    Config.load_from_file(silent=False)
-    
     # Get database path
     db_path = Config.get_database_path()
     if db_path is None:
@@ -815,7 +812,7 @@ def generate_profiles(
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     
     # Get Mode 3 parameters from config
     fft_size = Config.PROFILE_FFT_SIZE
@@ -1130,6 +1127,20 @@ Note:
             # Execute heatmaps and/or profiles (can run simultaneously)
             success = True
             
+            # Run profiles FIRST if requested (needed for differences and FWHM)
+            if run_profiles:
+                print(f">>> Executing profiles mode...", flush=True, file=sys.stderr)
+                # Get options from command-line or config
+                save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                
+                profile_success = generate_profiles(
+                    output_dir=args.output_dir,
+                    save_format=save_format,
+                )
+                
+                if not profile_success:
+                    success = False
+            
             # Run heatmaps if requested
             if run_heatmaps:
                 print(f">>> Executing heatmaps mode...", flush=True, file=sys.stderr)
@@ -1170,43 +1181,7 @@ Note:
                 if not heatmap_success:
                     success = False
             
-            # Run profiles if requested
-            if run_profiles:
-                print(f">>> Executing profiles mode...", flush=True, file=sys.stderr)
-                # Get options from command-line or config
-                save_format = args.format if args.format else Config.HEATMAP_FORMAT
-                
-                profile_success = generate_profiles(
-                    output_dir=args.output_dir,
-                    save_format=save_format,
-                )
-                
-                if not profile_success:
-                    success = False
-            
-            # Run differences if requested
-            if run_differences:
-                print(f">>> Executing differences mode...", flush=True, file=sys.stderr)
-                diff_success = generate_differences(
-                    output_dir=args.output_dir,
-                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
-                )
-                
-                if not diff_success:
-                    success = False
-            
-            # Run FWHM if requested
-            if run_fwhm:
-                print(f">>> Executing FWHM mode...", flush=True, file=sys.stderr)
-                fwhm_success = generate_fwhm(
-                    output_dir=args.output_dir,
-                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
-                )
-                
-                if not fwhm_success:
-                    success = False
-            
-            # Run differences if requested
+            # Run differences if requested (requires profiles to be run first)
             if run_differences:
                 print(f">>> Executing differences mode...", flush=True, file=sys.stderr)
                 diff_success = generate_differences(

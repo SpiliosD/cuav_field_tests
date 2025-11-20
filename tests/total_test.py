@@ -888,7 +888,7 @@ def test_visualization():
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     requested_ranges = Config.get_requested_ranges()
     base_output_dir = Config.get_visualization_output_dir_path()
     
@@ -965,7 +965,7 @@ def test_single_profiles():
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
-    starting_range = Config.STARTING_RANGE
+    starting_range = Config.get_starting_range()
     
     # Get Mode 3 parameters from config
     fft_size = Config.PROFILE_FFT_SIZE

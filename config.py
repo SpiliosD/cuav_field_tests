@@ -125,12 +125,39 @@ def _apply_txt_config(config_dict: dict) -> None:
     # Visualization parameters
     if "range_step" in config_dict:
         Config.RANGE_STEP = float(config_dict["range_step"])
-    if "starting_range" in config_dict:
-        Config.STARTING_RANGE = float(config_dict["starting_range"])
-    if "requested_ranges" in config_dict:
+    if "starting_range_index" in config_dict:
+        Config.STARTING_RANGE_INDEX = int(config_dict["starting_range_index"])
+    # Backward compatibility: if old "starting_range" is used, try to infer starting_range_index
+    elif "starting_range" in config_dict:
+        old_starting_range = float(config_dict["starting_range"])
+        # If starting_range is negative, assume it's the distance at index 0
+        # Then starting_range_index = -starting_range / range_step
+        # For example, if starting_range=-1344 and range_step=48, then starting_range_index=28
+        if old_starting_range < 0:
+            Config.STARTING_RANGE_INDEX = int(-old_starting_range / Config.RANGE_STEP)
+            print(f"⚠ Warning: 'starting_range' is deprecated. Inferred starting_range_index={Config.STARTING_RANGE_INDEX}. Use 'starting_range_index' instead.")
+        else:
+            Config.STARTING_RANGE_INDEX = 0
+            print("⚠ Warning: 'starting_range' is deprecated. Use 'starting_range_index' instead.")
+    if "requested_range_indices" in config_dict:
+        ranges_str = config_dict["requested_range_indices"].strip()
         # Parse comma-separated list
-        ranges_str = config_dict["requested_ranges"]
-        Config.REQUESTED_RANGES = ranges_str
+        if ranges_str:
+            Config.REQUESTED_RANGE_INDICES = ranges_str
+    # Backward compatibility: if old "requested_ranges" is used, convert to relative indices
+    elif "requested_ranges" in config_dict:
+        old_ranges_str = config_dict["requested_ranges"].strip()
+        if old_ranges_str:
+            try:
+                # Convert old distance-based ranges to relative indices
+                old_ranges = [float(r.strip()) for r in old_ranges_str.split(",") if r.strip()]
+                # Compute relative indices: range / range_step
+                # These are offsets from starting_range_index
+                relative_indices = [int(r / Config.RANGE_STEP) for r in old_ranges]
+                Config.REQUESTED_RANGE_INDICES = ",".join(map(str, relative_indices))
+                print("⚠ Warning: 'requested_ranges' is deprecated. Converted to relative indices. Use 'requested_range_indices' instead.")
+            except (ValueError, ZeroDivisionError):
+                Config.REQUESTED_RANGE_INDICES = "0,1,2"
     if "visualization_output_dir" in config_dict:
         Config.VISUALIZATION_OUTPUT_DIR = config_dict["visualization_output_dir"]
     
@@ -266,11 +293,15 @@ class Config:
     # Range step: spacing between range bins in meters
     RANGE_STEP: ClassVar[float] = 48.0
     
-    # Starting range: range corresponding to first bin in meters
-    STARTING_RANGE: ClassVar[float] = -1400.0
+    # Starting range index: index of the range bin that corresponds to 0 meters
+    # Previous bins have negative distances, later bins have positive distances
+    # Formula: distance = (index - STARTING_RANGE_INDEX) * RANGE_STEP
+    STARTING_RANGE_INDEX: ClassVar[int] = 0
     
-    # Requested ranges: comma-separated list of ranges to visualize (in meters)
-    REQUESTED_RANGES: ClassVar[str] = "100,200,300"
+    # Requested range indices: comma-separated list of range bin indices relative to starting_range_index
+    # These are offsets from the starting_range_index (which is at 0 m)
+    # The actual range bin indices are computed as: starting_range_index + requested_range_index
+    REQUESTED_RANGE_INDICES: ClassVar[str] = "0,1,2"
     
     # Output directory for visualization files
     VISUALIZATION_OUTPUT_DIR: ClassVar[str] = "visualization_output"
@@ -374,15 +405,118 @@ class Config:
         return Path(cls.VISUALIZATION_OUTPUT_DIR).expanduser().resolve()
     
     @classmethod
-    def get_requested_ranges(cls) -> list[float]:
-        """Parse requested_ranges string into list of floats."""
-        ranges_str = cls.REQUESTED_RANGES.strip()
+    def get_requested_range_indices(cls) -> list[int]:
+        """
+        Parse requested_range_indices string into a list of relative indices.
+        
+        These are offsets from starting_range_index.
+        
+        Returns
+        -------
+        list[int]
+            List of relative range indices (offsets from starting_range_index)
+        """
+        ranges_str = cls.REQUESTED_RANGE_INDICES.strip()
         if not ranges_str:
             return []
         try:
-            return [float(r.strip()) for r in ranges_str.split(",") if r.strip()]
+            return [int(r.strip()) for r in ranges_str.split(",") if r.strip()]
         except ValueError:
+            print(f"⚠ Warning: Could not parse requested_range_indices: {cls.REQUESTED_RANGE_INDICES}")
             return []
+    
+    @classmethod
+    def get_actual_range_indices(cls) -> list[int]:
+        """
+        Get actual range bin indices from relative indices.
+        
+        Returns
+        -------
+        list[int]
+            List of actual range bin indices: starting_range_index + relative_index
+        """
+        relative_indices = cls.get_requested_range_indices()
+        return [cls.STARTING_RANGE_INDEX + rel_idx for rel_idx in relative_indices]
+    
+    @classmethod
+    def get_requested_ranges(cls) -> list[float]:
+        """
+        Get requested ranges as actual distances (computed from relative indices).
+        
+        Returns
+        -------
+        list[float]
+            List of requested ranges in meters (computed from relative indices)
+        """
+        relative_indices = cls.get_requested_range_indices()
+        return [cls.relative_index_to_distance(rel_idx) for rel_idx in relative_indices]
+    
+    @classmethod
+    def range_index_to_distance(cls, index: int) -> float:
+        """
+        Convert an actual range bin index to distance in meters.
+        
+        Formula: distance = (index - starting_range_index) * range_step
+        
+        Parameters
+        ----------
+        index : int
+            Actual range bin index (0-indexed)
+        
+        Returns
+        -------
+        float
+            Actual distance in meters
+        """
+        return (index - cls.STARTING_RANGE_INDEX) * cls.RANGE_STEP
+    
+    @classmethod
+    def relative_index_to_distance(cls, relative_index: int) -> float:
+        """
+        Convert a relative index (offset from starting_range_index) to distance in meters.
+        
+        Formula: distance = relative_index * range_step
+        
+        Parameters
+        ----------
+        relative_index : int
+            Relative index (offset from starting_range_index)
+        
+        Returns
+        -------
+        float
+            Actual distance in meters
+        """
+        return relative_index * cls.RANGE_STEP
+    
+    @classmethod
+    def distance_to_range_index(cls, distance: float) -> int:
+        """
+        Convert an actual distance to the nearest range bin index.
+        
+        Parameters
+        ----------
+        distance : float
+            Actual distance in meters
+        
+        Returns
+        -------
+        int
+            Nearest range bin index (0-indexed)
+        """
+        return int(round(distance / cls.RANGE_STEP + cls.STARTING_RANGE_INDEX))
+    
+    @classmethod
+    def get_starting_range(cls) -> float:
+        """
+        Get the actual starting range distance in meters (distance at index 0).
+        
+        Returns
+        -------
+        float
+            Starting range distance: (0 - STARTING_RANGE_INDEX) * RANGE_STEP
+        """
+        return cls.range_index_to_distance(0)
     
     @classmethod
     def get_heatmap_parameters(cls) -> list[str]:

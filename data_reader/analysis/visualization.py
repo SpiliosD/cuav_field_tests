@@ -344,8 +344,17 @@ def create_heatmaps(
     try:
         db.connect()
         records = db.query_timestamp_range()
+        print(f"Found {len(records)} records in database")
     finally:
         db.close()
+    
+    if len(records) == 0:
+        print("⚠ WARNING: No records found in database. Cannot generate heatmaps.")
+        return {}
+    
+    # Check if records have azimuth/elevation data
+    records_with_az_el = sum(1 for r in records if r.get("azimuth") is not None and r.get("elevation") is not None)
+    print(f"Records with azimuth/elevation data: {records_with_az_el} / {len(records)}")
     
     results = {}
     
@@ -365,6 +374,11 @@ def create_heatmaps(
             
             if len(azimuth) == 0:
                 print(f"⚠ No data found for {parameter} at range {requested_range} m")
+                print(f"   (This may be normal if no measurements exist at this exact range)")
+                print(f"   Debug: range_step={range_step}, starting_range={starting_range}")
+                # Check if any records have this parameter
+                records_with_param = sum(1 for r in records if r.get(parameter) is not None)
+                print(f"   Records with {parameter} data: {records_with_param} / {len(records)}")
                 continue
             
             # Create gridded heatmap data
