@@ -8,7 +8,7 @@ from pathlib import Path
 import numpy as np
 
 # Add project root to path if running directly
-project_root = Path(__file__).resolve().parent
+project_root = Path(__file__).resolve().parent.parent  # Go up one level from tests/
 if str(project_root) not in sys.path:
     sys.path.insert(0, str(project_root))
 

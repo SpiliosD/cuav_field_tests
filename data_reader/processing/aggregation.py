@@ -107,12 +107,22 @@ def build_timestamp_data_dict(
     result: dict[str, dict[str, Any]] = {}
 
     # Group pairs by raw directory to minimize file reads
-    dir_to_timestamps: dict[Path, list[str]] = {}
-    for processed_ts, raw_dir in timestamp_path_pairs:
-        raw_dir_path = Path(raw_dir).expanduser().resolve()
+    # Group by directory, but also track the file path for each timestamp
+    # timestamp_path_pairs contains (timestamp, raw_file_path) tuples
+    dir_to_timestamps: dict[Path, list[tuple[str, Path]]] = {}  # (timestamp, file_path) pairs
+    for processed_ts, raw_path in timestamp_path_pairs:
+        raw_path_obj = Path(raw_path).expanduser().resolve()
+        # Determine if it's a file or directory
+        if raw_path_obj.is_file() or raw_path_obj.suffix:  # It's a file
+            raw_dir_path = raw_path_obj.parent
+            file_path = raw_path_obj
+        else:  # It's a directory (backward compatibility)
+            raw_dir_path = raw_path_obj
+            file_path = None
+        
         if raw_dir_path not in dir_to_timestamps:
             dir_to_timestamps[raw_dir_path] = []
-        dir_to_timestamps[raw_dir_path].append(processed_ts)
+        dir_to_timestamps[raw_dir_path].append((processed_ts, file_path))
 
     # Process each directory
     for raw_dir_path, timestamps in dir_to_timestamps.items():
@@ -135,7 +145,8 @@ def build_timestamp_data_dict(
         if processed_dir is None or not processed_dir.exists():
             print(f"Warning: Could not find corresponding processed directory for {raw_dir_path}")
             # Initialize entries with None values
-            for ts in timestamps:
+            # timestamps is now a list of (timestamp, file_path) tuples
+            for ts, _ in timestamps:
                 result[ts] = {
                     "azimuth": None,
                     "elevation": None,
@@ -177,7 +188,8 @@ def build_timestamp_data_dict(
         
         # Process each timestamp
         # Note: timestamps from timestamp_path_pairs are already corrected
-        for processed_ts in timestamps:
+        # timestamps is now a list of (timestamp, file_path) tuples
+        for processed_ts, raw_file_path in timestamps:
             processed_ts_float = float(processed_ts)
             processed_ts_normalized = round(processed_ts_float, 6)
 
@@ -198,26 +210,41 @@ def build_timestamp_data_dict(
                 entry["azimuth"] = float(log_azimuth[match_idx])
                 entry["elevation"] = float(log_elevation[match_idx])
 
-            # Match with processed files (peak, spectrum, wind)
-            if peak_data is not None:
-                peak_row = _find_matching_row(peak_data, processed_ts_float, atol)
-                if peak_row is not None:
+            # Match with processed files (peak, spectrum, wind) by index
+            # Find the index of this timestamp in processed_timestamps_list
+            timestamp_idx = None
+            for idx, ts_str in enumerate(processed_timestamps_list):
+                try:
+                    ts_float = float(ts_str)
+                    ts_normalized = round(ts_float, 6)
+                    if abs(ts_normalized - processed_ts_normalized) <= atol:
+                        timestamp_idx = idx
+                        break
+                except (ValueError, TypeError):
+                    continue
+            
+            # Use index-based matching for processed files (positional matching)
+            if timestamp_idx is not None:
+                if peak_data is not None and timestamp_idx < len(peak_data):
                     # Data starts from 4th element (index 3) onwards
-                    entry["peak"] = peak_row[3:] if len(peak_row) > 3 else np.array([])
+                    entry["peak"] = peak_data[timestamp_idx][3:] if len(peak_data[timestamp_idx]) > 3 else np.array([])
 
-            if spectrum_data is not None:
-                spectrum_row = _find_matching_row(spectrum_data, processed_ts_float, atol)
-                if spectrum_row is not None:
-                    entry["spectrum"] = spectrum_row[3:] if len(spectrum_row) > 3 else np.array([])
+                if spectrum_data is not None and timestamp_idx < len(spectrum_data):
+                    entry["spectrum"] = spectrum_data[timestamp_idx][3:] if len(spectrum_data[timestamp_idx]) > 3 else np.array([])
 
-            if wind_data is not None:
-                wind_row = _find_matching_row(wind_data, processed_ts_float, atol)
-                if wind_row is not None:
-                    entry["wind"] = wind_row[3:] if len(wind_row) > 3 else np.array([])
+                if wind_data is not None and timestamp_idx < len(wind_data):
+                    entry["wind"] = wind_data[timestamp_idx][3:] if len(wind_data[timestamp_idx]) > 3 else np.array([])
 
-            # Find and load raw spectra file
-            # Match by index: find the index of this timestamp in processed_timestamps_list
-            raw_file = _find_raw_file_for_timestamp(raw_dir_path, processed_ts_float, processed_timestamps_list, atol)
+            # Load raw spectra file - use the file path directly if provided, otherwise use positional matching
+            raw_file = None
+            if raw_file_path is not None and raw_file_path.exists():
+                raw_file = raw_file_path
+            elif timestamp_idx is not None:
+                # Fallback to positional matching: nth timestamp = nth file
+                raw_files = sorted(raw_dir_path.glob("spectra_*.txt"))
+                if timestamp_idx < len(raw_files):
+                    raw_file = raw_files[timestamp_idx]
+            
             if raw_file is not None:
                 try:
                     # Skip first 13 lines, then read numeric data

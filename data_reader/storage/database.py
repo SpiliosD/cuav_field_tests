@@ -548,15 +548,16 @@ class DataDatabase:
         if row is None:
             return None
 
+        # sqlite3.Row doesn't have .get() method, use try/except or check keys
         result = {
             "timestamp": row["timestamp"],
             "azimuth": row["azimuth"],
             "elevation": row["elevation"],
             "source_processed_dir": row["source_processed_dir"],
             "source_raw_dir": row["source_raw_dir"],
-            "source_raw_file": row.get("source_raw_file"),  # Use get() for backward compatibility
+            "source_raw_file": row["source_raw_file"] if "source_raw_file" in row.keys() else None,
             "source_log_file": row["source_log_file"],
-            "original_timestamp": row.get("original_timestamp"),  # Use get() for backward compatibility
+            "original_timestamp": row["original_timestamp"] if "original_timestamp" in row.keys() else None,
             "imported_at": row["imported_at"],
             "updated_at": row["updated_at"],
         }

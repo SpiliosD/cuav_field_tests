@@ -280,7 +280,7 @@ class Config:
     # ============================================================================
     
     # Run mode: 'test', 'heatmaps', or 'profiles'
-    # 'test': Run the complete test suite (total_test.py)
+    # 'test': Run the complete test suite (tests/total_test.py)
     # 'heatmaps': Generate heatmaps using parameters below
     # 'profiles': Generate single-profile visualizations (Mode 3)
     RUN_MODE: ClassVar[str] = "test"

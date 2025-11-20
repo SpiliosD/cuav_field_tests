@@ -92,6 +92,49 @@ def normalize_parameter(param: str) -> str:
     return param_lower
 
 
+def _load_visualization_module():
+    """
+    Load the visualization module directly from file to bypass data_reader.__init__.py.
+    
+    This avoids importing the entire data_reader package which requires numpy at import time.
+    This is especially important when using a venv that might not have all packages installed.
+    
+    Returns
+    -------
+    module
+        The loaded visualization module
+    """
+    import importlib.util
+    
+    project_root = Path(__file__).resolve().parent
+    viz_module_path = project_root / "data_reader" / "analysis" / "visualization.py"
+    
+    if not viz_module_path.exists():
+        raise ImportError(f"Visualization module not found at {viz_module_path}")
+    
+    module_name = "data_reader.analysis.visualization"
+    
+    # Check if module is already loaded
+    if module_name in sys.modules:
+        # If it's a proper module (not a broken one), return it
+        existing = sys.modules[module_name]
+        if hasattr(existing, 'create_heatmaps'):
+            return existing
+        # Otherwise, remove broken module
+        del sys.modules[module_name]
+    
+    # Load module directly from file
+    spec = importlib.util.spec_from_file_location(module_name, viz_module_path)
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Could not create spec for {viz_module_path}")
+    
+    visualization = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = visualization
+    spec.loader.exec_module(visualization)
+    
+    return visualization
+
+
 def create_or_rebuild_database() -> bool:
     """
     Create or rebuild the database from processed and raw data.
@@ -235,6 +278,10 @@ def run_tests():
     # Import and run total_test
     print(">>> Importing total_test module...", flush=True, file=sys.stderr)
     try:
+        # Import from tests directory
+        tests_path = Path(__file__).resolve().parent / "tests"
+        if str(tests_path) not in sys.path:
+            sys.path.insert(0, str(tests_path))
         import total_test
         print(">>> ✓ total_test module imported successfully", flush=True, file=sys.stderr)
     except Exception as e:
@@ -300,13 +347,31 @@ def generate_heatmaps(
         Image format to save (default: 'png').
     """
     print(">>> Importing create_heatmaps (lazy import)...", flush=True, file=sys.stderr)
+    sys.stderr.flush()  # Force flush before import
     try:
-        from data_reader import create_heatmaps
+        visualization = _load_visualization_module()
+        create_heatmaps = visualization.create_heatmaps
         print(">>> ✓ create_heatmaps imported successfully", flush=True, file=sys.stderr)
-    except Exception as e:
+        sys.stderr.flush()
+    except ImportError as e:
         print(f">>> ✗ ERROR importing create_heatmaps: {e}", flush=True, file=sys.stderr)
+        sys.stderr.flush()
+        print(">>>   Hint: Make sure all dependencies are installed (numpy, matplotlib, etc.)", flush=True, file=sys.stderr)
+        sys.stderr.flush()
+        print(">>>   Run: pip install -r requirements.txt", flush=True, file=sys.stderr)
+        sys.stderr.flush()
+        print(">>>   Or use the conda Python: C:/ProgramData/anaconda3/envs/cuav_field_tests/python.exe main.py", flush=True, file=sys.stderr)
+        sys.stderr.flush()
         import traceback
         traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
+        return False
+    except Exception as e:
+        print(f">>> ✗ ERROR importing create_heatmaps: {e}", flush=True, file=sys.stderr)
+        sys.stderr.flush()
+        import traceback
+        traceback.print_exc(file=sys.stderr)
+        sys.stderr.flush()
         return False
     
     print("=" * 70, flush=True)
@@ -456,10 +521,9 @@ def generate_differences(
     """
     print(">>> Importing difference analysis functions (lazy import)...", flush=True, file=sys.stderr)
     try:
-        from data_reader.analysis.visualization import (
-            compute_sequential_differences,
-            create_difference_heatmaps,
-        )
+        visualization = _load_visualization_module()
+        compute_sequential_differences = visualization.compute_sequential_differences
+        create_difference_heatmaps = visualization.create_difference_heatmaps
         print(">>> ✓ Difference functions imported successfully", flush=True, file=sys.stderr)
     except Exception as e:
         print(f">>> ✗ ERROR importing difference functions: {e}", flush=True, file=sys.stderr)
@@ -587,10 +651,9 @@ def generate_fwhm(
     """
     print(">>> Importing FWHM analysis functions (lazy import)...", flush=True, file=sys.stderr)
     try:
-        from data_reader.analysis.visualization import (
-            compute_fwhm_profile,
-            create_fwhm_heatmaps,
-        )
+        visualization = _load_visualization_module()
+        compute_fwhm_profile = visualization.compute_fwhm_profile
+        create_fwhm_heatmaps = visualization.create_fwhm_heatmaps
         print(">>> ✓ FWHM functions imported successfully", flush=True, file=sys.stderr)
     except Exception as e:
         print(f">>> ✗ ERROR importing FWHM functions: {e}", flush=True, file=sys.stderr)
@@ -719,10 +782,9 @@ def generate_profiles(
     """
     print(">>> Importing profile processing functions (lazy import)...", flush=True, file=sys.stderr)
     try:
-        from data_reader.analysis.visualization import (
-            process_single_profiles,
-            create_profile_visualizations,
-        )
+        visualization = _load_visualization_module()
+        process_single_profiles = visualization.process_single_profiles
+        create_profile_visualizations = visualization.create_profile_visualizations
         print(">>> ✓ Profile functions imported successfully", flush=True, file=sys.stderr)
     except Exception as e:
         print(f">>> ✗ ERROR importing profile functions: {e}", flush=True, file=sys.stderr)
