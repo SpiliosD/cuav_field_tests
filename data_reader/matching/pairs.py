@@ -46,13 +46,15 @@ class MatchedEntry:
     Attributes
     ----------
     processed_timestamp
-        Timestamp string from the processed `_Peak.txt` line.
+        Timestamp string from the processed `_Peak.txt` line (corrected).
     raw_datetime
         Formatted datetime string parsed from the raw spectra filename.
     raw_timestamp
         Seconds-since-epoch representation derived from ``raw_datetime``.
     raw_path
         Absolute path to the raw ASCII spectra file.
+    original_timestamp
+        Original uncorrected timestamp from processed file (for debugging).
 
     Why we need it
     --------------
@@ -64,6 +66,22 @@ class MatchedEntry:
     raw_datetime: str
     raw_timestamp: str
     raw_path: str
+    original_timestamp: str | None
+
+    def __init__(
+        self,
+        *,
+        processed_timestamp: str,
+        raw_datetime: str,
+        raw_timestamp: str,
+        raw_path: str,
+        original_timestamp: str | None = None,
+    ):
+        self.processed_timestamp = processed_timestamp
+        self.raw_datetime = raw_datetime
+        self.raw_timestamp = raw_timestamp
+        self.raw_path = raw_path
+        self.original_timestamp = original_timestamp
 
     def as_tuple(self) -> tuple[str, str, str, str]:
         return (
@@ -71,6 +89,16 @@ class MatchedEntry:
             self.raw_datetime,
             self.raw_timestamp,
             self.raw_path,
+        )
+    
+    def as_tuple_with_original(self) -> tuple[str, str, str, str, str | None]:
+        """Return tuple including original timestamp for database storage."""
+        return (
+            self.processed_timestamp,
+            self.raw_datetime,
+            self.raw_timestamp,
+            self.raw_path,
+            self.original_timestamp,
         )
 
 
