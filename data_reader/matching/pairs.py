@@ -247,18 +247,19 @@ def match_processed_and_raw(
 
 
 def filter_matches_by_log_timestamps(
-    matches: list[tuple[str, str, str, str]],
+    matches: list[tuple[str, str, str, str] | tuple[str, str, str, str, str | None]],
     log_file_path: str | Path,
     *,
     atol: float = 0.0001,
-) -> list[tuple[str, str, str, str]]:
+) -> list[tuple[str, str, str, str] | tuple[str, str, str, str, str | None]]:
     """
     Drop matched tuples whose processed timestamp is absent from the log file.
 
     Inputs
     ------
     matches : list of tuples
-        Output of :func:`match_processed_and_raw`.
+        Output of :func:`match_processed_and_raw`. Can be 4 or 5 element tuples
+        (5-element tuples include original_timestamp).
     log_file_path : Path-like
         Log file whose third row contains the canonical timestamps.
     atol : float
@@ -266,9 +267,10 @@ def filter_matches_by_log_timestamps(
 
     Outputs
     -------
-    list[tuple[str, str, str, str]]
+    list[tuple[str, str, str, str] | tuple[str, str, str, str, str | None]]
         Filtered list retaining only entries whose processed timestamps match
-        log timestamps within the specified tolerance.
+        log timestamps within the specified tolerance. Preserves tuple structure
+        (4 or 5 elements) from input.
 
     Why we need it
     --------------
@@ -276,6 +278,9 @@ def filter_matches_by_log_timestamps(
     recorded in the log due to connectivity issues. Filtering keeps subsequent
     analyses consistent with the authoritative log. Uses tolerance-based matching
     (atol=0.00001 by default) to account for small floating-point precision differences.
+    
+    Note: Processed timestamps in matches are already corrected, so we don't apply
+    correction again here.
     """
 
     log_timestamps = np.asarray(extract_log_timestamps(log_file_path), dtype=float)
@@ -283,23 +288,21 @@ def filter_matches_by_log_timestamps(
     # Normalize timestamps to 6 decimal places to match common precision format
     # This helps with floating-point precision issues
     log_timestamps_normalized = np.round(log_timestamps, decimals=6)
-
-    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
     
-    filtered: list[tuple[str, str, str, str]] = []
+    filtered: list[tuple[str, str, str, str] | tuple[str, str, str, str, str | None]] = []
     for entry in matches:
         try:
-            # Correct processed timestamp before comparison
-            raw_processed_ts = float(entry[0])
-            processed_ts = correct_processed_timestamp(raw_processed_ts)
+            # Processed timestamp is already corrected from match_processed_and_raw
+            # No need to correct again
+            processed_ts = float(entry[0])
             # Normalize processed timestamp to same precision
             processed_ts_normalized = round(processed_ts, 6)
             
             # Check if processed_ts is within tolerance of any log timestamp
             differences = np.abs(log_timestamps_normalized - processed_ts_normalized)
             if np.any(differences <= atol):
-                # Store corrected timestamp in the filtered entry
-                filtered.append((str(processed_ts), entry[1], entry[2], entry[3]))
+                # Preserve the original tuple structure (4 or 5 elements)
+                filtered.append(entry)
         except (ValueError, TypeError) as e:
             # Skip entries with invalid timestamps
             continue

@@ -84,24 +84,27 @@ def print_raw_dirs():
             print(f"  {i}. {filename}")
     
     # Show raw filename for each timestamp
-    print("\n" + "=" * 70)
-    print("Raw filenames by timestamp:")
-    print("=" * 70)
-    print(f"{'Corrected TS':<20} {'Original TS':<20} {'Raw Filename':<40} {'Full Path'}")
-    print("-" * 70)
+    print("\n" + "=" * 100)
+    print("Timestamps and Raw Filenames:")
+    print("=" * 100)
+    print(f"{'Original TS':<25} {'Corrected TS':<25} {'Raw Filename':<50}")
+    print("-" * 100)
     
     for record in records:
-        timestamp = record.get("timestamp")
+        corrected_ts = record.get("timestamp")
         original_ts = record.get("original_timestamp")
         raw_file = record.get("source_raw_file")
         
+        # Format timestamps
+        original_str = str(original_ts) if original_ts else "(not stored)"
+        corrected_str = str(corrected_ts) if corrected_ts else "(not stored)"
+        
+        # Extract filename from full path
         if raw_file:
             filename = Path(raw_file).name
-            original_str = str(original_ts) if original_ts else "(not stored)"
-            print(f"{str(timestamp):<20} {original_str:<20} {filename:<40} {raw_file}")
+            print(f"{original_str:<25} {corrected_str:<25} {filename:<50}")
         else:
-            original_str = str(original_ts) if original_ts else "(not stored)"
-            print(f"{str(timestamp):<20} {original_str:<20} {'(not stored)':<40} {'-'}")
+            print(f"{original_str:<25} {corrected_str:<25} {'(not stored)':<50}")
     
     # Summary statistics
     records_with_file = sum(1 for r in records if r.get("source_raw_file"))
