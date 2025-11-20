@@ -324,24 +324,42 @@ class Config:
     # ============================================================================
     
     @classmethod
+    def _normalize_windows_path(cls, path_str: str) -> str:
+        """
+        Normalize Windows absolute paths that might be missing the colon.
+        Handles cases like 'D\path\to\file' -> 'D:\path\to\file'
+        """
+        path_str = path_str.strip()
+        # Check if path looks like a Windows drive letter without colon
+        # Pattern: single letter followed by backslash or forward slash
+        if len(path_str) >= 2 and path_str[0].isalpha() and path_str[1] in ('\\', '/'):
+            # Missing colon, add it
+            path_str = f"{path_str[0]}:{path_str[1:]}"
+        return path_str
+    
+    @classmethod
     def get_processed_root_path(cls) -> Path:
         """Get processed root as Path object."""
-        return Path(cls.PROCESSED_ROOT).expanduser().resolve()
+        normalized = cls._normalize_windows_path(cls.PROCESSED_ROOT)
+        return Path(normalized).expanduser().resolve()
     
     @classmethod
     def get_raw_root_path(cls) -> Path:
         """Get raw root as Path object."""
-        return Path(cls.RAW_ROOT).expanduser().resolve()
+        normalized = cls._normalize_windows_path(cls.RAW_ROOT)
+        return Path(normalized).expanduser().resolve()
     
     @classmethod
     def get_log_file_path(cls) -> Path:
         """Get log file as Path object."""
-        return Path(cls.LOG_FILE).expanduser().resolve()
+        normalized = cls._normalize_windows_path(cls.LOG_FILE)
+        return Path(normalized).expanduser().resolve()
     
     @classmethod
     def get_output_dir_path(cls) -> Path:
         """Get output directory as Path object."""
-        return Path(cls.OUTPUT_DIR).expanduser().resolve()
+        normalized = cls._normalize_windows_path(cls.OUTPUT_DIR)
+        return Path(normalized).expanduser().resolve()
     
     @classmethod
     def get_database_path(cls) -> Path | None:
