@@ -156,6 +156,8 @@ def build_timestamp_data_dict(
         wind_data = _load_processed_file_with_timestamps(wind_file) if wind_file.exists() else None
 
         # Read all processed timestamps from _Peak.txt for index-based matching
+        from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+        
         processed_timestamps_list: list[str] = []
         if peak_file.exists():
             try:
@@ -166,11 +168,15 @@ def build_timestamp_data_dict(
                             continue
                         tokens = stripped.split()
                         if len(tokens) >= 3:
-                            processed_timestamps_list.append(tokens[2])
+                            # Apply timestamp correction
+                            raw_timestamp = tokens[2]
+                            corrected_timestamp = correct_processed_timestamp(raw_timestamp)
+                            processed_timestamps_list.append(str(corrected_timestamp))
             except Exception as e:
                 print(f"Warning: Failed to read timestamps from {peak_file}: {e}")
         
         # Process each timestamp
+        # Note: timestamps from timestamp_path_pairs are already corrected
         for processed_ts in timestamps:
             processed_ts_float = float(processed_ts)
             processed_ts_normalized = round(processed_ts_float, 6)
@@ -282,10 +288,11 @@ def _find_corresponding_processed_dir(
 
 def _load_processed_file_with_timestamps(file_path: Path) -> np.ndarray | None:
     """
-    Load a processed file and return the data array.
+    Load a processed file and return the data array with corrected timestamps.
 
     The file should have lines where the third element (index 2) is the timestamp,
     and data values start from the fourth element (index 3) onwards.
+    Timestamps are automatically corrected for year (2091->2025) and day offset.
 
     Inputs
     ------
@@ -295,10 +302,16 @@ def _load_processed_file_with_timestamps(file_path: Path) -> np.ndarray | None:
     Outputs
     -------
     np.ndarray | None
-        Array where each row corresponds to a line, or None if file cannot be read
+        Array where each row corresponds to a line, with corrected timestamps in column 2,
+        or None if file cannot be read
     """
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+    
     try:
         data = read_text_data_file(file_path)
+        # Correct timestamps in column 2 (index 2)
+        if data.shape[1] > 2:
+            data[:, 2] = np.array([correct_processed_timestamp(ts) for ts in data[:, 2]])
         return data
     except Exception:
         return None

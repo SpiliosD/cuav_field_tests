@@ -27,6 +27,7 @@ def build_and_save_to_database(
     *,
     atol: float = 0.0001,
     return_dict: bool = False,
+    original_timestamps_map: dict[str, str] | None = None,
 ) -> dict[str, dict[str, Any]] | int:
     """
     Build aggregated data dictionary and save to database in one step.
@@ -51,6 +52,9 @@ def build_and_save_to_database(
         Timestamp matching tolerance
     return_dict : bool
         If True, return the data dictionary. If False, return count of saved records.
+    original_timestamps_map : dict[str, str] | None
+        Dictionary mapping corrected timestamp -> original uncorrected timestamp
+        (for debugging/tracking purposes)
 
     Returns
     -------
@@ -90,11 +94,15 @@ def build_and_save_to_database(
             # No filename available
     
     # Add raw directory path and filename to each entry in data_dict
+    # Also add original timestamp for debugging
     for timestamp, entry in data_dict.items():
         if timestamp in timestamp_to_raw_dir:
             entry["_raw_dir_path"] = timestamp_to_raw_dir[timestamp]
         if timestamp in timestamp_to_raw_file:
             entry["_raw_file_path"] = timestamp_to_raw_file[timestamp]
+        # Store original uncorrected timestamp if available
+        if original_timestamps_map and timestamp in original_timestamps_map:
+            entry["_original_timestamp"] = original_timestamps_map[timestamp]
 
     # Save to database
     count = save_timestamp_data(
@@ -103,6 +111,7 @@ def build_and_save_to_database(
         source_processed_dir=str(processed_root),
         source_raw_dir=str(raw_root),  # Keep root as fallback
         source_log_file=str(log_file_path),
+        original_timestamps_map=original_timestamps_map,
     )
 
     if return_dict:

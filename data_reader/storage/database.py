@@ -112,6 +112,7 @@ class DataDatabase:
                 source_raw_dir TEXT,
                 source_raw_file TEXT,
                 source_log_file TEXT,
+                original_timestamp REAL,
                 imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -120,6 +121,13 @@ class DataDatabase:
         # Add source_raw_file column if it doesn't exist (for existing databases)
         try:
             cursor.execute("ALTER TABLE timestamps ADD COLUMN source_raw_file TEXT")
+        except Exception:
+            # Column already exists or other error, ignore
+            pass
+        
+        # Add original_timestamp column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE timestamps ADD COLUMN original_timestamp REAL")
         except Exception:
             # Column already exists or other error, ignore
             pass
@@ -235,6 +243,7 @@ class DataDatabase:
         source_raw_dir: str | None = None,
         source_raw_file: str | None = None,
         source_log_file: str | None = None,
+        original_timestamp: str | float | None = None,
     ) -> None:
         """
         Insert or update data for a single timestamp.
@@ -259,8 +268,12 @@ class DataDatabase:
             Source processed directory path
         source_raw_dir : str | None
             Source raw directory path
+        source_raw_file : str | None
+            Source raw data filename (full path)
         source_log_file : str | None
             Source log file path
+        original_timestamp : str | float | None
+            Original uncorrected timestamp from processed file (for debugging/tracking)
         """
         if self.connection is None:
             self.connect()
@@ -268,12 +281,15 @@ class DataDatabase:
         cursor = self.connection.cursor()
         ts_float = float(timestamp)
 
+        # Convert original_timestamp to float if provided
+        original_ts_float = float(original_timestamp) if original_timestamp is not None else None
+        
         # Insert or update main timestamp record
         cursor.execute("""
             INSERT INTO timestamps (
                 timestamp, azimuth, elevation,
-                source_processed_dir, source_raw_dir, source_raw_file, source_log_file
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                source_processed_dir, source_raw_dir, source_raw_file, source_log_file, original_timestamp
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(timestamp) DO UPDATE SET
                 azimuth = excluded.azimuth,
                 elevation = excluded.elevation,
@@ -281,6 +297,7 @@ class DataDatabase:
                 source_raw_dir = excluded.source_raw_dir,
                 source_raw_file = excluded.source_raw_file,
                 source_log_file = excluded.source_log_file,
+                original_timestamp = excluded.original_timestamp,
                 updated_at = CURRENT_TIMESTAMP
         """, (
             ts_float,
@@ -290,6 +307,7 @@ class DataDatabase:
             source_raw_dir,
             source_raw_file,
             source_log_file,
+            original_ts_float,
         ))
 
         # Insert array data (replace if exists)
@@ -482,6 +500,9 @@ class DataDatabase:
             # Get raw filename if available
             raw_file = entry.get("_raw_file_path")
             
+            # Get original uncorrected timestamp if available (for debugging)
+            original_ts = entry.get("_original_timestamp")
+            
             self.insert_timestamp_data(
                 timestamp=timestamp,
                 azimuth=entry.get("azimuth"),
@@ -494,6 +515,7 @@ class DataDatabase:
                 source_raw_dir=raw_dir_to_store,
                 source_raw_file=raw_file,
                 source_log_file=source_log_file,
+                original_timestamp=original_ts,
             )
             count += 1
         return count
@@ -534,6 +556,7 @@ class DataDatabase:
             "source_raw_dir": row["source_raw_dir"],
             "source_raw_file": row.get("source_raw_file"),  # Use get() for backward compatibility
             "source_log_file": row["source_log_file"],
+            "original_timestamp": row.get("original_timestamp"),  # Use get() for backward compatibility
             "imported_at": row["imported_at"],
             "updated_at": row["updated_at"],
         }
@@ -704,6 +727,7 @@ def save_timestamp_data(
     source_processed_dir: str | None = None,
     source_raw_dir: str | None = None,
     source_log_file: str | None = None,
+    original_timestamps_map: dict[str, str] | None = None,
 ) -> int:
     """
     Save timestamp data dictionary to database.
@@ -720,6 +744,9 @@ def save_timestamp_data(
         Source raw directory
     source_log_file : str | None
         Source log file
+    original_timestamps_map : dict[str, str] | None
+        Dictionary mapping corrected timestamp -> original uncorrected timestamp
+        (for debugging/tracking purposes)
 
     Returns
     -------

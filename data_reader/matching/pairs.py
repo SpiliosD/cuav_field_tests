@@ -89,9 +89,11 @@ def _iter_processed_log_files(root: Path) -> Iterable[Path]:
     yield from root.rglob(f"*{PROCESSED_SUFFIX}")
 
 
-def _read_timestamps_from_file(file_path: Path) -> list[str]:
+def _read_timestamps_from_file(file_path: Path) -> tuple[list[str], dict[str, str]]:
     """
     Read the third whitespace-delimited token from each line in a processed log.
+    
+    Timestamps are automatically corrected for year (2091->2025) and day offset.
 
     Inputs
     ------
@@ -100,8 +102,9 @@ def _read_timestamps_from_file(file_path: Path) -> list[str]:
 
     Outputs
     -------
-    list[str]
-        Ordered list of timestamp strings.
+    tuple[list[str], dict[str, str]]
+        - List of corrected timestamp strings (for matching/operations)
+        - Dictionary mapping corrected timestamp -> original uncorrected timestamp (for debugging)
 
     Why we need it
     --------------
@@ -110,8 +113,10 @@ def _read_timestamps_from_file(file_path: Path) -> list[str]:
     the main matching routine tidy and makes it easier to extend (e.g., to capture
     additional metadata from the same lines).
     """
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
 
     timestamps: list[str] = []
+    original_timestamps: dict[str, str] = {}  # corrected -> original mapping
     with file_path.open("r", encoding="utf-8") as handle:
         for line_num, line in enumerate(handle, start=1):
             stripped = line.strip()
@@ -123,8 +128,13 @@ def _read_timestamps_from_file(file_path: Path) -> list[str]:
                     f"Line {line_num} in {file_path} has fewer than 3 columns. "
                     f"Found {len(tokens)} column(s). Expected format: <col1> <col2> <timestamp> ..."
                 )
-            timestamps.append(tokens[2])  # Third element (index 2)
-    return timestamps
+            # Read timestamp and apply correction
+            raw_timestamp = tokens[2]
+            corrected_timestamp = correct_processed_timestamp(raw_timestamp)
+            corrected_str = str(corrected_timestamp)
+            timestamps.append(corrected_str)
+            original_timestamps[corrected_str] = raw_timestamp
+    return timestamps, original_timestamps
 
 
 def _sorted_raw_files(folder: Path) -> list[Path]:
@@ -196,7 +206,7 @@ def match_processed_and_raw(
                 f"Missing raw folder for processed folder '{folder}': expected '{raw_folder}'",
             )
 
-        processed_timestamps = _read_timestamps_from_file(log_file)
+        processed_timestamps, original_timestamps_map = _read_timestamps_from_file(log_file)
         raw_files = _sorted_raw_files(raw_folder)
 
         if len(processed_timestamps) != len(raw_files):
@@ -207,16 +217,20 @@ def match_processed_and_raw(
 
         for processed_ts, raw_path in zip(processed_timestamps, raw_files):
             raw_dt = timestamp_from_spectra_filename(raw_path)
+            # Store original timestamp for this corrected timestamp
+            original_ts = original_timestamps_map.get(processed_ts)
             combined.append(
                 MatchedEntry(
                     processed_timestamp=processed_ts,
                     raw_datetime=raw_dt.strftime("%Y-%m-%d %H:%M:%S.%f"),
                     raw_timestamp=datetime_to_epoch_seconds(raw_dt),
                     raw_path=str(raw_path),
+                    original_timestamp=original_ts,  # Store original for debugging
                 ),
             )
 
-    return [entry.as_tuple() for entry in combined]
+    # Return tuples with original timestamp included
+    return [entry.as_tuple_with_original() for entry in combined]
 
 
 def filter_matches_by_log_timestamps(
@@ -257,17 +271,22 @@ def filter_matches_by_log_timestamps(
     # This helps with floating-point precision issues
     log_timestamps_normalized = np.round(log_timestamps, decimals=6)
 
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+    
     filtered: list[tuple[str, str, str, str]] = []
     for entry in matches:
         try:
-            processed_ts = float(entry[0])
+            # Correct processed timestamp before comparison
+            raw_processed_ts = float(entry[0])
+            processed_ts = correct_processed_timestamp(raw_processed_ts)
             # Normalize processed timestamp to same precision
             processed_ts_normalized = round(processed_ts, 6)
             
             # Check if processed_ts is within tolerance of any log timestamp
             differences = np.abs(log_timestamps_normalized - processed_ts_normalized)
             if np.any(differences <= atol):
-                filtered.append(entry)
+                # Store corrected timestamp in the filtered entry
+                filtered.append((str(processed_ts), entry[1], entry[2], entry[3]))
         except (ValueError, TypeError) as e:
             # Skip entries with invalid timestamps
             continue

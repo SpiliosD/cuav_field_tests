@@ -14,6 +14,8 @@ sys.path.insert(0, str(project_root))
 import os
 os.chdir(project_root)
 
+from pathlib import Path
+
 from config import Config
 from data_reader.storage.database import DataDatabase, query_timestamp_range
 
@@ -70,39 +72,51 @@ def print_raw_dirs():
         for i, raw_dir in enumerate(sorted(raw_dirs), 1):
             print(f"  {i}. {raw_dir}")
     
-    # Print all unique raw filenames
+    # Print all unique raw filenames (just the filename, not full path)
     if raw_files:
         print("\nUnique raw filenames:")
-        for i, raw_file in enumerate(sorted(raw_files), 1):
-            print(f"  {i}. {raw_file}")
+        unique_filenames = set()
+        for raw_file in raw_files:
+            if raw_file:
+                filename = Path(raw_file).name
+                unique_filenames.add(filename)
+        for i, filename in enumerate(sorted(unique_filenames), 1):
+            print(f"  {i}. {filename}")
     
-    # Show what's stored for each timestamp
+    # Show raw filename for each timestamp
     print("\n" + "=" * 70)
-    print("Raw directory paths and filenames by timestamp (first 20):")
+    print("Raw filenames by timestamp:")
     print("=" * 70)
-    for i, record in enumerate(records[:20], 1):
+    print(f"{'Corrected TS':<20} {'Original TS':<20} {'Raw Filename':<40} {'Full Path'}")
+    print("-" * 70)
+    
+    for record in records:
         timestamp = record.get("timestamp")
-        raw_dir = record.get("source_raw_dir")
+        original_ts = record.get("original_timestamp")
         raw_file = record.get("source_raw_file")
-        print(f"Timestamp {timestamp}:")
-        print(f"  Directory: {raw_dir}")
-        print(f"  File: {raw_file if raw_file else '(not stored)'}")
+        
+        if raw_file:
+            filename = Path(raw_file).name
+            original_str = str(original_ts) if original_ts else "(not stored)"
+            print(f"{str(timestamp):<20} {original_str:<20} {filename:<40} {raw_file}")
+        else:
+            original_str = str(original_ts) if original_ts else "(not stored)"
+            print(f"{str(timestamp):<20} {original_str:<20} {'(not stored)':<40} {'-'}")
     
-    if len(records) > 20:
-        print(f"\n... and {len(records) - 20} more records")
+    # Summary statistics
+    records_with_file = sum(1 for r in records if r.get("source_raw_file"))
+    records_without_file = len(records) - records_with_file
     
-    # Check if all paths are the same (old database) or different (new database)
-    if len(raw_dirs) == 1:
+    print("\n" + "=" * 70)
+    print("Summary:")
+    print(f"  Total records: {len(records)}")
+    print(f"  Records with raw filename: {records_with_file}")
+    print(f"  Records without raw filename: {records_without_file}")
+    
+    if records_without_file > 0:
         print("\n" + "=" * 70)
-        print("NOTE: All timestamps have the same raw directory path.")
-        print("This database may have been created before the enhancement.")
-        print("Rebuild the database to store specific paths and filenames for each timestamp.")
-        print("=" * 70)
-    
-    if len(raw_files) == 0:
-        print("\n" + "=" * 70)
-        print("NOTE: No raw filenames stored in database.")
-        print("Rebuild the database to store filenames for each timestamp.")
+        print("NOTE: Some records are missing raw filenames.")
+        print("Rebuild the database to store filenames for all timestamps.")
         print("=" * 70)
 
 if __name__ == "__main__":

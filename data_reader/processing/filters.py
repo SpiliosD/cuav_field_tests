@@ -51,9 +51,18 @@ def filter_processed_array_by_timestamps(
     logic so every caller applies the same matching and tolerance rules.
     """
 
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+    
     log_timestamps = extract_log_timestamps(log_file_path)
-    processed_ts = processed_array[:, timestamp_column].astype(float)
+    processed_ts_raw = processed_array[:, timestamp_column].astype(float)
+    
+    # Correct processed timestamps
+    processed_ts = np.array([correct_processed_timestamp(ts) for ts in processed_ts_raw])
 
     mask = np.isclose(processed_ts[:, None], log_timestamps[None, :], atol=atol).any(axis=1)
-    return processed_array[mask]
+    # Update the timestamp column in the returned array with corrected values
+    result = processed_array[mask].copy()
+    if result.size > 0:
+        result[:, timestamp_column] = processed_ts[mask]
+    return result
 

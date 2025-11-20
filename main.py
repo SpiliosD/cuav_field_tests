@@ -169,11 +169,16 @@ def create_or_rebuild_database() -> bool:
             print(f"  ✓ Existing database removed", flush=True)
         
         # Prepare timestamp-path pairs for database creation
-        # Store full file path so we can extract both directory and filename
+        # Store full file path so we can extract both directory and filename later
+        # Also track original uncorrected timestamps for debugging
         timestamp_path_pairs = []
+        original_timestamps_map = {}  # corrected -> original mapping
         for match in filtered_matches:
-            processed_ts = match[0]
+            processed_ts = match[0]  # Corrected timestamp
             raw_file_path = Path(match[3])
+            # Store original timestamp if available (match[4] if present)
+            if len(match) > 4 and match[4] is not None:
+                original_timestamps_map[processed_ts] = match[4]
             # Store full file path so we can extract both directory and filename later
             timestamp_path_pairs.append((processed_ts, str(raw_file_path)))
         
@@ -186,6 +191,7 @@ def create_or_rebuild_database() -> bool:
             str(log_file),
             str(db_path),
             atol=Config.TIMESTAMP_TOLERANCE,
+            original_timestamps_map=original_timestamps_map if original_timestamps_map else None,
         )
         
         print(f"  ✓ Successfully created database with {count} entries", flush=True)
