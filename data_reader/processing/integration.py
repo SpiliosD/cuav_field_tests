@@ -65,13 +65,43 @@ def build_and_save_to_database(
         log_file_path,
         atol=atol,
     )
+    
+    # Store specific raw directory paths and filenames for each timestamp
+    # Create mappings from timestamp to raw directory path and filename
+    timestamp_to_raw_dir = {}
+    timestamp_to_raw_file = {}
+    
+    # timestamp_path_pairs now contains (timestamp, raw_file_path) tuples
+    # Extract both directory and filename from the full file path
+    for ts, path_str in timestamp_path_pairs:
+        path_obj = Path(path_str)
+        # Check if it's a file path (has extension) or directory path
+        if path_obj.suffix:  # Has file extension, treat as file path
+            # It's a file path
+            timestamp_to_raw_dir[ts] = str(path_obj.parent)
+            timestamp_to_raw_file[ts] = str(path_obj)
+        elif path_obj.is_file():  # Check if it exists and is a file
+            # It's a file path
+            timestamp_to_raw_dir[ts] = str(path_obj.parent)
+            timestamp_to_raw_file[ts] = str(path_obj)
+        else:
+            # It's a directory path (backward compatibility)
+            timestamp_to_raw_dir[ts] = str(path_obj)
+            # No filename available
+    
+    # Add raw directory path and filename to each entry in data_dict
+    for timestamp, entry in data_dict.items():
+        if timestamp in timestamp_to_raw_dir:
+            entry["_raw_dir_path"] = timestamp_to_raw_dir[timestamp]
+        if timestamp in timestamp_to_raw_file:
+            entry["_raw_file_path"] = timestamp_to_raw_file[timestamp]
 
     # Save to database
     count = save_timestamp_data(
         data_dict,
         db_path,
         source_processed_dir=str(processed_root),
-        source_raw_dir=str(raw_root),
+        source_raw_dir=str(raw_root),  # Keep root as fallback
         source_log_file=str(log_file_path),
     )
 

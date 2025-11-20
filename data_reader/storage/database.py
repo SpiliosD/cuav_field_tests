@@ -110,11 +110,19 @@ class DataDatabase:
                 elevation REAL,
                 source_processed_dir TEXT,
                 source_raw_dir TEXT,
+                source_raw_file TEXT,
                 source_log_file TEXT,
                 imported_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """)
+        
+        # Add source_raw_file column if it doesn't exist (for existing databases)
+        try:
+            cursor.execute("ALTER TABLE timestamps ADD COLUMN source_raw_file TEXT")
+        except Exception:
+            # Column already exists or other error, ignore
+            pass
 
         # Peak data table (stores array as JSON)
         cursor.execute("""
@@ -225,6 +233,7 @@ class DataDatabase:
         power_density_spectrum: np.ndarray | None = None,
         source_processed_dir: str | None = None,
         source_raw_dir: str | None = None,
+        source_raw_file: str | None = None,
         source_log_file: str | None = None,
     ) -> None:
         """
@@ -263,13 +272,14 @@ class DataDatabase:
         cursor.execute("""
             INSERT INTO timestamps (
                 timestamp, azimuth, elevation,
-                source_processed_dir, source_raw_dir, source_log_file
-            ) VALUES (?, ?, ?, ?, ?, ?)
+                source_processed_dir, source_raw_dir, source_raw_file, source_log_file
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(timestamp) DO UPDATE SET
                 azimuth = excluded.azimuth,
                 elevation = excluded.elevation,
                 source_processed_dir = excluded.source_processed_dir,
                 source_raw_dir = excluded.source_raw_dir,
+                source_raw_file = excluded.source_raw_file,
                 source_log_file = excluded.source_log_file,
                 updated_at = CURRENT_TIMESTAMP
         """, (
@@ -278,6 +288,7 @@ class DataDatabase:
             elevation,
             source_processed_dir,
             source_raw_dir,
+            source_raw_file,
             source_log_file,
         ))
 
@@ -464,6 +475,13 @@ class DataDatabase:
         """
         count = 0
         for timestamp, entry in data_dict.items():
+            # Use specific raw directory path if available, otherwise use root
+            specific_raw_dir = entry.get("_raw_dir_path")
+            raw_dir_to_store = specific_raw_dir if specific_raw_dir else source_raw_dir
+            
+            # Get raw filename if available
+            raw_file = entry.get("_raw_file_path")
+            
             self.insert_timestamp_data(
                 timestamp=timestamp,
                 azimuth=entry.get("azimuth"),
@@ -473,7 +491,8 @@ class DataDatabase:
                 wind=entry.get("wind"),
                 power_density_spectrum=entry.get("power_density_spectrum"),
                 source_processed_dir=source_processed_dir,
-                source_raw_dir=source_raw_dir,
+                source_raw_dir=raw_dir_to_store,
+                source_raw_file=raw_file,
                 source_log_file=source_log_file,
             )
             count += 1
@@ -513,6 +532,7 @@ class DataDatabase:
             "elevation": row["elevation"],
             "source_processed_dir": row["source_processed_dir"],
             "source_raw_dir": row["source_raw_dir"],
+            "source_raw_file": row.get("source_raw_file"),  # Use get() for backward compatibility
             "source_log_file": row["source_log_file"],
             "imported_at": row["imported_at"],
             "updated_at": row["updated_at"],

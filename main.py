@@ -169,12 +169,13 @@ def create_or_rebuild_database() -> bool:
             print(f"  ✓ Existing database removed", flush=True)
         
         # Prepare timestamp-path pairs for database creation
+        # Store full file path so we can extract both directory and filename
         timestamp_path_pairs = []
         for match in filtered_matches:
             processed_ts = match[0]
             raw_file_path = Path(match[3])
-            raw_dir_path = raw_file_path.parent
-            timestamp_path_pairs.append((processed_ts, str(raw_dir_path)))
+            # Store full file path so we can extract both directory and filename later
+            timestamp_path_pairs.append((processed_ts, str(raw_file_path)))
         
         # Create database
         print(f"  Building database with {len(timestamp_path_pairs)} entries...", flush=True)
