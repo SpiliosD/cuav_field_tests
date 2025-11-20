@@ -1129,6 +1129,31 @@ Note:
         else:
             Config.load_from_file(silent=False)
         
+        # Show how many datasets will be analyzed
+        try:
+            dataset_configs = Config.get_dataset_configs()
+            num_datasets = len(dataset_configs)
+            if num_datasets > 0:
+                print(f"\n📊 Dataset Configuration: {num_datasets} dataset(s) will be analyzed", flush=True)
+                if num_datasets > 1:
+                    print(f"   Datasets will be processed sequentially:", flush=True)
+                    for idx, (proc_root, raw_root, log_file, db_path) in enumerate(dataset_configs, 1):
+                        db_name = db_path.name if db_path else "N/A"
+                        print(f"     {idx}. Database: {db_name}", flush=True)
+                else:
+                    # Single dataset - show more details
+                    proc_root, raw_root, log_file, db_path = dataset_configs[0]
+                    db_name = db_path.name if db_path else "N/A"
+                    print(f"   Database: {db_name}", flush=True)
+                print(flush=True)
+            else:
+                print("\n⚠ WARNING: No dataset configurations found in config.txt", flush=True)
+                print(flush=True)
+        except Exception as e:
+            if Config.is_debug_mode():
+                print(f"\n⚠ WARNING: Could not determine number of datasets: {e}", flush=True)
+                print(flush=True)
+        
         # Determine execution mode (command-line takes precedence over config)
         # Test mode is mutually exclusive with others
         if args.test:
@@ -1334,6 +1359,9 @@ if __name__ == "__main__":
     print(f"Working directory: {os.getcwd()}", flush=True)
     print(f"sys.argv: {sys.argv}", flush=True)
     print("=" * 70, flush=True)
+    
+    # Show how many datasets will be analyzed (after config is loaded)
+    # This will be shown after config loading, so we need to check again later
     print(flush=True)
     
     try:
