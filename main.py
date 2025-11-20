@@ -155,6 +155,20 @@ def create_or_rebuild_database() -> bool:
         
         # Filter matches by log timestamps
         print("  Filtering matches by log timestamps...", flush=True)
+        
+        # Debug: show sample timestamps before filtering
+        if len(matches) > 0:
+            sample_match_ts = float(matches[0][0])
+            from data_reader.parsing.logs import extract_log_timestamps
+            from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+            import numpy as np
+            log_ts_raw = extract_log_timestamps(str(log_file))
+            log_ts_sample = float(log_ts_raw[0]) if len(log_ts_raw) > 0 else None
+            log_ts_corrected_sample = correct_processed_timestamp(log_ts_sample) if log_ts_sample else None
+            print(f"    Debug: Sample processed timestamp (corrected): {sample_match_ts:.6f}", flush=True)
+            print(f"    Debug: Sample log timestamp (raw): {log_ts_sample:.6f}" if log_ts_sample else "    Debug: No log timestamps", flush=True)
+            print(f"    Debug: Sample log timestamp (corrected): {log_ts_corrected_sample:.6f}" if log_ts_corrected_sample else "", flush=True)
+        
         filtered_matches = filter_matches_by_log_timestamps(
             matches, 
             str(log_file), 

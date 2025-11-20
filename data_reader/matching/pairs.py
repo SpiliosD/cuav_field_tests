@@ -283,11 +283,20 @@ def filter_matches_by_log_timestamps(
     correction again here.
     """
 
-    log_timestamps = np.asarray(extract_log_timestamps(log_file_path), dtype=float)
+    log_timestamps_raw = np.asarray(extract_log_timestamps(log_file_path), dtype=float)
+    
+    # Log file timestamps might also need correction (same issue as processed files)
+    # Check if log timestamps need correction by comparing with a sample
+    from data_reader.parsing.timestamp_correction import correct_processed_timestamp
+    
+    # Correct log timestamps if needed (they likely have the same issue as processed files)
+    log_timestamps_corrected = np.array([
+        correct_processed_timestamp(ts) for ts in log_timestamps_raw
+    ])
     
     # Normalize timestamps to 6 decimal places to match common precision format
     # This helps with floating-point precision issues
-    log_timestamps_normalized = np.round(log_timestamps, decimals=6)
+    log_timestamps_normalized = np.round(log_timestamps_corrected, decimals=6)
     
     filtered: list[tuple[str, str, str, str] | tuple[str, str, str, str, str | None]] = []
     for entry in matches:
