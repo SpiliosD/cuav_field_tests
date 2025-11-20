@@ -153,6 +153,8 @@ def _read_timestamps_from_file(file_path: Path) -> tuple[list[str], dict[str, st
 def _sorted_raw_files(folder: Path) -> list[Path]:
     """
     Return chronologically sorted spectra files for ``folder``.
+    
+    Only returns .txt files, ignoring .bin files even if they have the same base name.
 
     Inputs
     ------
@@ -162,17 +164,37 @@ def _sorted_raw_files(folder: Path) -> list[Path]:
     Outputs
     -------
     list[Path]
-        Sorted list of spectra files matching ``RAW_FILE_PATTERN``.
+        Sorted list of spectra files matching ``RAW_FILE_PATTERN`` (.txt files only).
 
     Why we need it
     --------------
     Spectra filenames already encode timestamps; sorting ensures we pair them with
     processed timestamps by index, even if the filesystem order is not deterministic.
+    If both .txt and .bin files exist with the same base name, only .txt files are used.
     """
 
-    files = sorted(folder.glob(RAW_FILE_PATTERN))
+    # Get all .txt files matching the pattern
+    txt_files = sorted(folder.glob(RAW_FILE_PATTERN))
+    
+    # Also check for .txt files explicitly to ensure we get them even if pattern changes
+    all_txt_files = sorted(folder.glob("spectra_*.txt"))
+    
+    # Use the pattern-matching results, but ensure we only have .txt files
+    files = [f for f in txt_files if f.suffix.lower() == '.txt']
+    
+    # If we didn't get anything from pattern, try explicit .txt search
     if not files:
-        raise FileNotFoundError(f"No raw files matching '{RAW_FILE_PATTERN}' found in {folder}")
+        files = all_txt_files
+    
+    # Filter out any .bin files that might have been picked up
+    files = [f for f in files if f.suffix.lower() == '.txt']
+    
+    # Remove duplicates (in case pattern and explicit search overlap)
+    files = sorted(list(set(files)))
+    
+    if not files:
+        raise FileNotFoundError(f"No raw .txt files matching '{RAW_FILE_PATTERN}' found in {folder}")
+    
     return files
 
 
@@ -215,70 +237,18 @@ def match_processed_and_raw(
         raw_folder = raw_base / relative_folder
 
         if not raw_folder.exists():
-            # Try alternative path construction: maybe raw_root structure is different
-            # Check if raw_base itself contains the folder structure
-            folder_name = folder.name
-            relative_parts = list(relative_folder.parts)
-            
-            # Try alternative path constructions
-            alternative_paths = []
-            
-            # Try 1: Direct child of raw_base
-            if folder_name:
-                alternative_paths.append(raw_base / folder_name)
-            
-            # Try 2: Last part of relative path only
-            if len(relative_parts) > 0:
-                alternative_paths.append(raw_base / relative_parts[-1])
-            
-            # Try 3: Search recursively in raw_base for folder with matching name
-            if folder_name:
-                matching_dirs = list(raw_base.rglob(folder_name))
-                alternative_paths.extend(matching_dirs)
-            
-            # Try 4: If relative_folder has multiple parts, try different combinations
-            if len(relative_parts) >= 2:
-                # Try with last 2 parts
-                alternative_paths.append(raw_base / relative_parts[-2] / relative_parts[-1])
-            
-            found_alternative = False
-            for alt_path in alternative_paths:
-                if alt_path and alt_path.exists() and alt_path.is_dir():
-                    # Verify it contains raw files
-                    raw_files_check = list(alt_path.glob(RAW_FILE_PATTERN))
-                    if raw_files_check:
-                        raw_folder = alt_path
-                        found_alternative = True
-                        print(f"⚠ INFO: Using alternative raw folder path: '{raw_folder}'")
-                        print(f"  Found {len(raw_files_check)} raw files in this folder")
-                        break
-            
-            if not found_alternative:
-                print(f"⚠ WARNING: Missing raw folder for processed folder '{folder}'")
-                print(f"  Expected: '{raw_folder}'")
-                print(f"  Processed base: '{processed_base}'")
-                print(f"  Raw base: '{raw_base}'")
-                print(f"  Relative folder: '{relative_folder}'")
-                print(f"  Folder name: '{folder_name}'")
-                # List what actually exists in raw_base
-                if raw_base.exists():
-                    print(f"  Contents of raw_base:")
-                    try:
-                        for item in sorted(raw_base.iterdir()):
-                            print(f"    - {item.name} ({'dir' if item.is_dir() else 'file'})")
-                    except Exception as e:
-                        print(f"    (Could not list contents: {e})")
-                print(f"  Skipping this folder and continuing...")
-                continue
+            raise FileNotFoundError(
+                f"Missing raw folder for processed folder '{folder}': expected '{raw_folder}'",
+            )
 
         processed_timestamps, original_timestamps_map = _read_timestamps_from_file(log_file)
         raw_files = _sorted_raw_files(raw_folder)
 
         if len(processed_timestamps) != len(raw_files):
-            print(f"⚠ WARNING: Mismatch between processed timestamps and raw files in folder '{folder}'")
-            print(f"  Processed timestamps: {len(processed_timestamps)}, Raw files: {len(raw_files)}")
-            print(f"  Skipping this folder and continuing...")
-            continue
+            raise ValueError(
+                "Mismatch between processed timestamps and raw files in "
+                f"folder '{folder}': {len(processed_timestamps)} vs {len(raw_files)}",
+            )
 
         for processed_ts, raw_path in zip(processed_timestamps, raw_files):
             raw_dt = timestamp_from_spectra_filename(raw_path)
