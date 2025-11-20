@@ -706,19 +706,32 @@ Note:
             # If neither specified, use config file mode
             if not run_heatmaps and not run_profiles:
                 config_mode = Config.RUN_MODE.lower().strip()
-                if config_mode == "test":
-                    run_test = True
-                elif config_mode == "heatmaps":
-                    run_heatmaps = True
-                elif config_mode == "profiles":
-                    run_profiles = True
-                elif config_mode not in ("test", "heatmaps", "profiles"):
-                    print(f">>> ⚠ WARNING: Invalid run_mode '{config_mode}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
-                    print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
+                # Support comma-separated values like "heatmaps,profiles"
+                modes_list = [m.strip() for m in config_mode.split(",")]
+                
+                if "test" in modes_list:
+                    if len(modes_list) > 1:
+                        print(f">>> ⚠ WARNING: 'test' cannot be combined with other modes in config.txt. Using 'test' only.", flush=True, file=sys.stderr)
                     run_test = True
                 else:
-                    # Default to test if nothing specified
-                    run_test = True
+                    # Check for heatmaps and profiles
+                    if "heatmaps" in modes_list:
+                        run_heatmaps = True
+                    if "profiles" in modes_list:
+                        run_profiles = True
+                    
+                    # Validate modes
+                    valid_modes = {"test", "heatmaps", "profiles"}
+                    invalid_modes = [m for m in modes_list if m not in valid_modes]
+                    if invalid_modes:
+                        print(f">>> ⚠ WARNING: Invalid run_mode values '{invalid_modes}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
+                        if not run_heatmaps and not run_profiles:
+                            print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
+                            run_test = True
+                    
+                    # Default to test if nothing valid was specified
+                    if not run_test and not run_heatmaps and not run_profiles:
+                        run_test = True
             
             if run_test:
                 print(">>> Running in 'test' mode (from config.txt)", flush=True, file=sys.stderr)

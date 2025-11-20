@@ -4,11 +4,11 @@
 # Empty lines are also ignored
 
 # Directory Paths
-processed_root=D:\Raymetrics_Tests\BOMA2025\20250922\Wind
-raw_root=D:\Raymetrics_Tests\BOMA2025\RawSpectra_txt\20250922\Spectra\User\20250922\Wind
-log_file=D:\Raymetrics_Tests\BOMA2025\20250922\output.txt
+processed_root=D:\Raymetrics_Tests\BOMA2025\20250926\Wind
+raw_root=D:\Raymetrics_Tests\BOMA2025\RawSpectra_txt\20250926\Spectra\User\20250926\Wind
+log_file=D\Raymetrics_Tests\BOMA2025\20250926\output97.txt
 output_dir=timestamp_debug_output
-database_path=data/output.db
+database_path=data/output97.db
 
 # Processing Parameters
 timestamp_tolerance=0.0001
@@ -39,14 +39,17 @@ max_test_entries=10
 # Visualization Parameters
 range_step=48.0
 starting_range=-1440.0
-requested_ranges=48,96,144,192,240,576,336,384,432,480,528,576,624,672,720,768,816,864,912,960,1008, 1056,1104,1152,1200,1248,1296,1344,1392,1440,1488,1536,1584,1632,1680,1728,1776,1824,1872,1920,1968,2016
+requested_ranges=48,96
+# ,144,192,240,576,336,384,432,480,528,576,624,672,720,768,816,864,912,960,1008,1056,1104,1152,1200,1248,1296,1344,1392,1440,1488,1536,1584,1632,1680,1728,1776,1824,1872,1920,1968,2016
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode
-# Options: 'test', 'heatmaps', or 'profiles'
-# 'test': Run the complete test suite (total_test.py)
+# Options: 'test', 'heatmaps', 'profiles', or comma-separated: 'heatmaps,profiles'
+# 'test': Run the complete test suite (total_test.py) - cannot be combined with others
 # 'heatmaps': Generate heatmaps using parameters below
-# 'profiles': Generate single-profile visualizations (Mode 3)
+# 'profiles': Generate single-profile visualizations
+# 'heatmaps,profiles': Run both modes simultaneously
+# Examples: "heatmaps", "profiles", "heatmaps,profiles"
 run_mode=heatmaps
 
 # Heatmap Parameters (only used when run_mode='heatmaps')
@@ -62,11 +65,11 @@ heatmap_format=png
 # FFT size for frequency computation (e.g., 128 for 64 spectrum values)
 profile_fft_size=128
 # Sampling rate in Hz
-profile_sampling_rate=400000000.0
+profile_sampling_rate=100000.0
 # Allowable frequency interval for searching maximum SNR (Hz): "min_freq,max_freq"
-profile_frequency_interval=20000000,120000000
+profile_frequency_interval=0,50000
 # Frequency shift for Doppler lidar equation (Hz)
-profile_frequency_shift=80000000
+profile_frequency_shift=0.0
 # Laser wavelength for Doppler lidar equation (meters)
 profile_laser_wavelength=1.55e-6
 
