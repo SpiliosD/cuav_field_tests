@@ -456,21 +456,57 @@ class Config:
     
     @classmethod
     def get_processed_root_path(cls) -> Path:
-        """Get processed root as Path object."""
+        """Get processed root as Path object (returns first if multiple)."""
+        # Use PROCESSED_ROOTS if available, otherwise fall back to PROCESSED_ROOT
+        if hasattr(cls, 'PROCESSED_ROOTS') and len(cls.PROCESSED_ROOTS) > 0:
+            normalized = cls._normalize_windows_path(cls.PROCESSED_ROOTS[0])
+            return Path(normalized).expanduser().resolve()
         normalized = cls._normalize_windows_path(cls.PROCESSED_ROOT)
         return Path(normalized).expanduser().resolve()
     
     @classmethod
+    def get_processed_root_paths(cls) -> list[Path]:
+        """Get all processed root directories as Path objects."""
+        if hasattr(cls, 'PROCESSED_ROOTS') and len(cls.PROCESSED_ROOTS) > 0:
+            return [Path(cls._normalize_windows_path(p)).expanduser().resolve() for p in cls.PROCESSED_ROOTS]
+        normalized = cls._normalize_windows_path(cls.PROCESSED_ROOT)
+        return [Path(normalized).expanduser().resolve()]
+    
+    @classmethod
     def get_raw_root_path(cls) -> Path:
-        """Get raw root as Path object."""
+        """Get raw root as Path object (returns first if multiple)."""
+        # Use RAW_ROOTS if available, otherwise fall back to RAW_ROOT
+        if hasattr(cls, 'RAW_ROOTS') and len(cls.RAW_ROOTS) > 0:
+            normalized = cls._normalize_windows_path(cls.RAW_ROOTS[0])
+            return Path(normalized).expanduser().resolve()
         normalized = cls._normalize_windows_path(cls.RAW_ROOT)
         return Path(normalized).expanduser().resolve()
     
     @classmethod
+    def get_raw_root_paths(cls) -> list[Path]:
+        """Get all raw root directories as Path objects."""
+        if hasattr(cls, 'RAW_ROOTS') and len(cls.RAW_ROOTS) > 0:
+            return [Path(cls._normalize_windows_path(p)).expanduser().resolve() for p in cls.RAW_ROOTS]
+        normalized = cls._normalize_windows_path(cls.RAW_ROOT)
+        return [Path(normalized).expanduser().resolve()]
+    
+    @classmethod
     def get_log_file_path(cls) -> Path:
-        """Get log file as Path object."""
+        """Get log file as Path object (returns first if multiple)."""
+        # Use LOG_FILES if available, otherwise fall back to LOG_FILE
+        if hasattr(cls, 'LOG_FILES') and len(cls.LOG_FILES) > 0:
+            normalized = cls._normalize_windows_path(cls.LOG_FILES[0])
+            return Path(normalized).expanduser().resolve()
         normalized = cls._normalize_windows_path(cls.LOG_FILE)
         return Path(normalized).expanduser().resolve()
+    
+    @classmethod
+    def get_log_file_paths(cls) -> list[Path]:
+        """Get all log file paths as Path objects."""
+        if hasattr(cls, 'LOG_FILES') and len(cls.LOG_FILES) > 0:
+            return [Path(cls._normalize_windows_path(p)).expanduser().resolve() for p in cls.LOG_FILES]
+        normalized = cls._normalize_windows_path(cls.LOG_FILE)
+        return [Path(normalized).expanduser().resolve()]
     
     @classmethod
     def get_output_dir_path(cls) -> Path:
