@@ -446,7 +446,9 @@ def create_heatmaps(
                 plt.savefig(filename, dpi=300, bbox_inches="tight")
                 print(f"✓ Saved heatmap: {filename}")
                 
-                # Close figure
+                # Display figure briefly (0.5 seconds) then close
+                plt.show(block=False)
+                plt.pause(0.5)
                 plt.close()
     
     return results
@@ -741,8 +743,7 @@ def create_profile_visualizations(
         ax.set_xlabel("Range (m)", fontsize=12)
         ax.set_ylabel("SNR", fontsize=12)
         ax.set_title("SNR Profiles (All Timestamps)", fontsize=14, fontweight="bold")
-        ax.set_xlim(-200, 3000)
-        #ax.set_ylim(0, 65)
+        ax.set_xlim(0, 3000)
         ax.grid(True, alpha=0.3)
         
         if output_dir is not None:
@@ -753,6 +754,9 @@ def create_profile_visualizations(
             print(f"✓ Saved SNR profiles plot: {filename}")
             results["snr_plot_path"] = str(filename)
         
+        # Display figure briefly (0.5 seconds) then close
+        plt.show(block=False)
+        plt.pause(0.5)
         plt.close()
         results["snr_profiles"] = snr_profiles
         results["snr_ranges"] = ranges
@@ -768,7 +772,6 @@ def create_profile_visualizations(
         ax.set_ylabel("Wind Speed (m/s)", fontsize=12)
         ax.set_title("Wind Profiles (All Timestamps)", fontsize=14, fontweight="bold")
         ax.set_xlim(0, 3000)
-        #ax.set_ylim(-10, 10)
         ax.grid(True, alpha=0.3)
         
         if output_dir is not None:
@@ -779,6 +782,9 @@ def create_profile_visualizations(
             print(f"✓ Saved wind profiles plot: {filename}")
             results["wind_plot_path"] = str(filename)
         
+        # Display figure briefly (0.5 seconds) then close
+        plt.show(block=False)
+        plt.pause(0.5)
         plt.close()
         results["wind_profiles"] = wind_profiles
         results["wind_ranges"] = ranges
@@ -804,6 +810,9 @@ def create_profile_visualizations(
             print(f"✓ Saved dominant frequency profiles plot: {filename}")
             results["dominant_frequency_plot_path"] = str(filename)
         
+        # Display figure briefly (0.5 seconds) then close
+        plt.show(block=False)
+        plt.pause(0.5)
         plt.close()
         results["dominant_frequency_profiles"] = dominant_frequency_profiles
         results["dominant_frequency_ranges"] = ranges

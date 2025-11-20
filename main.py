@@ -594,34 +594,38 @@ Examples:
   # Generate single profiles (Mode 3)
   python main.py --profiles
 
+  # Generate both heatmaps and profiles simultaneously
+  python main.py --heatmaps --profiles
+
 Note:
   - 'snr' and 'peak' refer to the same parameter (data from _Peak.txt)
   - 'wind' refers to wind data from _Wind.txt
   - 'spectrum' refers to spectrum data from _Spectrum.txt
   - When running from IDE without arguments, set 'run_mode' in config.txt
-  - Modes are mutually exclusive: only one mode runs at a time
+  - --test is mutually exclusive with --heatmaps and --profiles
+  - --heatmaps and --profiles can be combined to run simultaneously
+  - All figures are displayed for 0.5 seconds then automatically closed
         """,
         )
         
-        # Create mutually exclusive group for main actions (optional now)
-        action_group = parser.add_mutually_exclusive_group(required=False)
-        
-        action_group.add_argument(
+        # Test mode is mutually exclusive with other modes
+        # But heatmaps and profiles can run together
+        parser.add_argument(
             "--test",
             action="store_true",
-            help="Run the complete test suite (total_test.py). Overrides config.txt run_mode.",
+            help="Run the complete test suite (total_test.py). Overrides config.txt run_mode. Mutually exclusive with --heatmaps and --profiles.",
         )
         
-        action_group.add_argument(
+        parser.add_argument(
             "--heatmaps",
             action="store_true",
-            help="Generate heatmaps for specified parameters at specified ranges. Overrides config.txt run_mode.",
+            help="Generate heatmaps for specified parameters at specified ranges. Can be combined with --profiles.",
         )
         
-        action_group.add_argument(
+        parser.add_argument(
             "--profiles",
             action="store_true",
-            help="Generate single-profile visualizations (Mode 3). Overrides config.txt run_mode.",
+            help="Generate single-profile visualizations (Mode 3). Can be combined with --heatmaps.",
         )
         
         # Heatmap-specific arguments
@@ -683,79 +687,114 @@ Note:
             Config.load_from_file(silent=False)
         
         # Determine execution mode (command-line takes precedence over config)
+        # Test mode is mutually exclusive with others
         if args.test:
-            run_mode = "test"
+            if args.heatmaps or args.profiles:
+                print("✗ ERROR: --test cannot be combined with --heatmaps or --profiles", flush=True)
+                sys.exit(1)
+            run_test = True
+            run_heatmaps = False
+            run_profiles = False
             print(">>> Running in 'test' mode (from command-line argument)", flush=True, file=sys.stderr)
             print(flush=True)
-        elif args.heatmaps:
-            run_mode = "heatmaps"
-            print(">>> Running in 'heatmaps' mode (from command-line argument)", flush=True, file=sys.stderr)
-            print(flush=True)
-        elif args.profiles:
-            run_mode = "profiles"
-            print(">>> Running in 'profiles' mode (from command-line argument)", flush=True, file=sys.stderr)
-            print(flush=True)
         else:
-            # Use config file mode
-            run_mode = Config.RUN_MODE.lower().strip()
-            if run_mode not in ("test", "heatmaps", "profiles"):
-                print(f">>> ⚠ WARNING: Invalid run_mode '{run_mode}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
-                print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
-                run_mode = "test"
+            # Check if heatmaps or profiles are requested via command-line
+            run_test = False
+            run_heatmaps = args.heatmaps
+            run_profiles = args.profiles
             
-            print(f">>> Running in '{run_mode}' mode (from config.txt: run_mode={Config.RUN_MODE})", flush=True, file=sys.stderr)
-            print(flush=True)
+            # If neither specified, use config file mode
+            if not run_heatmaps and not run_profiles:
+                config_mode = Config.RUN_MODE.lower().strip()
+                if config_mode == "test":
+                    run_test = True
+                elif config_mode == "heatmaps":
+                    run_heatmaps = True
+                elif config_mode == "profiles":
+                    run_profiles = True
+                elif config_mode not in ("test", "heatmaps", "profiles"):
+                    print(f">>> ⚠ WARNING: Invalid run_mode '{config_mode}' in config.txt. Valid options: 'test', 'heatmaps', 'profiles'", flush=True, file=sys.stderr)
+                    print(f">>>   Defaulting to 'test' mode.", flush=True, file=sys.stderr)
+                    run_test = True
+                else:
+                    # Default to test if nothing specified
+                    run_test = True
+            
+            if run_test:
+                print(">>> Running in 'test' mode (from config.txt)", flush=True, file=sys.stderr)
+                print(flush=True)
+            else:
+                modes = []
+                if run_heatmaps:
+                    modes.append("heatmaps")
+                if run_profiles:
+                    modes.append("profiles")
+                if modes:
+                    print(f">>> Running in '{' and '.join(modes)}' mode (from command-line/config)", flush=True, file=sys.stderr)
+                print(flush=True)
         
         # Execute requested action
-        print(f">>> Executing {run_mode} mode...", flush=True, file=sys.stderr)
-        if run_mode == "test":
+        if run_test:
+            print(f">>> Executing test mode...", flush=True, file=sys.stderr)
             print(">>> Calling run_tests()...", flush=True, file=sys.stderr)
             run_tests()
-        elif run_mode == "profiles":
-            # Get options from command-line or config
-            save_format = args.format if args.format else Config.HEATMAP_FORMAT
+        else:
+            # Execute heatmaps and/or profiles (can run simultaneously)
+            success = True
             
-            success = generate_profiles(
-                output_dir=args.output_dir,
-                save_format=save_format,
-            )
+            # Run heatmaps if requested
+            if run_heatmaps:
+                print(f">>> Executing heatmaps mode...", flush=True, file=sys.stderr)
+                # Get parameters from command-line or config
+                if args.parameters:
+                    parameters = args.parameters
+                else:
+                    # Parse from config
+                    parameters = Config.get_heatmap_parameters()
+                    if not parameters:
+                        # Default if nothing specified
+                        parameters = ["wind", "peak", "spectrum"]
+                        print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
+                
+                # Get ranges from command-line or config
+                if args.ranges:
+                    try:
+                        ranges_list = parse_ranges(args.ranges)
+                    except ValueError as e:
+                        print(f"✗ ERROR: Invalid ranges format: {e}")
+                        print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
+                        sys.exit(1)
+                else:
+                    ranges_list = None  # Will use config default in generate_heatmaps()
+                
+                # Get other options from command-line or config
+                colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
+                save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                
+                heatmap_success = generate_heatmaps(
+                    parameters=parameters,
+                    ranges=ranges_list,
+                    output_dir=args.output_dir,
+                    colormap=colormap,
+                    save_format=save_format,
+                )
+                
+                if not heatmap_success:
+                    success = False
             
-            if not success:
-                sys.exit(1)
-        elif run_mode == "heatmaps":
-            # Get parameters from command-line or config
-            if args.parameters:
-                parameters = args.parameters
-            else:
-                # Parse from config
-                parameters = Config.get_heatmap_parameters()
-                if not parameters:
-                    # Default if nothing specified
-                    parameters = ["wind", "peak", "spectrum"]
-                    print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
-            
-            # Get ranges from command-line or config
-            if args.ranges:
-                try:
-                    ranges_list = parse_ranges(args.ranges)
-                except ValueError as e:
-                    print(f"✗ ERROR: Invalid ranges format: {e}")
-                    print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
-                    sys.exit(1)
-            else:
-                ranges_list = None  # Will use config default in generate_heatmaps()
-            
-            # Get other options from command-line or config
-            colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
-            save_format = args.format if args.format else Config.HEATMAP_FORMAT
-            
-            success = generate_heatmaps(
-                parameters=parameters,
-                ranges=ranges_list,
-                output_dir=args.output_dir,
-                colormap=colormap,
-                save_format=save_format,
-            )
+            # Run profiles if requested
+            if run_profiles:
+                print(f">>> Executing profiles mode...", flush=True, file=sys.stderr)
+                # Get options from command-line or config
+                save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                
+                profile_success = generate_profiles(
+                    output_dir=args.output_dir,
+                    save_format=save_format,
+                )
+                
+                if not profile_success:
+                    success = False
             
             if not success:
                 sys.exit(1)
