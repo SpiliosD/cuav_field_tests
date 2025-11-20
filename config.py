@@ -480,10 +480,53 @@ class Config:
     
     @classmethod
     def get_database_path(cls) -> Path | None:
-        """Get database path as Path object, or None if not configured."""
+        """Get database path as Path object, or None if not configured (returns first if multiple)."""
+        # Use DATABASE_PATHS if available, otherwise fall back to DATABASE_PATH
+        if hasattr(cls, 'DATABASE_PATHS') and len(cls.DATABASE_PATHS) > 0:
+            db_path = cls.DATABASE_PATHS[0]
+            if db_path is None:
+                return None
+            return Path(db_path).expanduser().resolve()
         if cls.DATABASE_PATH is None:
             return None
         return Path(cls.DATABASE_PATH).expanduser().resolve()
+    
+    @classmethod
+    def get_database_paths(cls) -> list[Path | None]:
+        """Get all database file paths as Path objects."""
+        if hasattr(cls, 'DATABASE_PATHS') and len(cls.DATABASE_PATHS) > 0:
+            return [Path(p).expanduser().resolve() if p is not None else None for p in cls.DATABASE_PATHS]
+        if cls.DATABASE_PATH is None:
+            return [None]
+        return [Path(cls.DATABASE_PATH).expanduser().resolve()]
+    
+    @classmethod
+    def get_dataset_configs(cls) -> list[tuple[Path, Path, Path, Path | None]]:
+        """
+        Get all dataset configurations as tuples of (processed_root, raw_root, log_file, database_path).
+        
+        Returns
+        -------
+        list[tuple[Path, Path, Path, Path | None]]
+            List of configuration tuples, one for each dataset
+        """
+        processed_roots = cls.get_processed_root_paths()
+        raw_roots = cls.get_raw_root_paths()
+        log_files = cls.get_log_file_paths()
+        db_paths = cls.get_database_paths()
+        
+        # Determine the number of configurations
+        max_count = max(len(processed_roots), len(raw_roots), len(log_files), len(db_paths))
+        
+        configs = []
+        for i in range(max_count):
+            processed_root = processed_roots[i] if i < len(processed_roots) else processed_roots[-1]
+            raw_root = raw_roots[i] if i < len(raw_roots) else raw_roots[-1]
+            log_file = log_files[i] if i < len(log_files) else log_files[-1]
+            db_path = db_paths[i] if i < len(db_paths) else db_paths[-1]
+            configs.append((processed_root, raw_root, log_file, db_path))
+        
+        return configs
     
     @classmethod
     def get_visualization_output_dir_path(cls) -> Path:
