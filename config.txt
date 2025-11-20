@@ -63,7 +63,7 @@ starting_range_index=28
 #   - Actual indices: 28+1=29, 28+2=30, ..., 28+43=71
 #   - Actual distances: 48m, 96m, ..., 2064m (displayed in plot titles)
 # The actual distances will be computed and displayed in plot titles
-requested_range_indices=1-43
+requested_range_indices=1-80
 visualization_output_dir=visualization_output
 
 # Main Script Execution Mode
