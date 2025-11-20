@@ -6,16 +6,22 @@ Simple script to print raw directory paths from the database.
 import sys
 from pathlib import Path
 
-# Add project root to path
-sys.path.insert(0, str(Path(__file__).parent))
+# Add project root to path (parent of sandbox directory)
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+# Change to project root directory to ensure relative paths work correctly
+import os
+os.chdir(project_root)
 
 from config import Config
 from data_reader.storage.database import DataDatabase, query_timestamp_range
 
 def print_raw_dirs():
     """Print all unique raw directory paths from the database."""
-    # Load configuration
-    Config.load_from_file(silent=False)
+    # Load configuration from project root
+    config_file = project_root / "config.txt"
+    Config.load_from_file(config_file, silent=False)
     
     # Get database path
     db_path = Config.get_database_path()
