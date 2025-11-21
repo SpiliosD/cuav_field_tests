@@ -59,6 +59,8 @@ Edit `config.txt` to configure:
 - Database path
 - Visualization parameters
 - Run modes
+- Base results folder (optional, for centralized output)
+- Plot display settings (show plots or save directly)
 - Debug mode (true/false for verbose output)
 
 ### Range Notation
@@ -82,7 +84,17 @@ Modes can be combined (except test mode).
 
 ## Output Organization
 
-All visualization outputs are organized into subfolders within `visualization_output/<logfile_basename>/`:
+### Centralized Results Folder
+
+If `base_results_folder` is set in `config.txt`, all outputs are organized under:
+- `base_results_folder/databases/` - All database files
+- `base_results_folder/images/` - All visualization images
+
+The subfolder structure is preserved within these directories.
+
+### Visualization Output Structure
+
+All visualization outputs are organized into subfolders within `visualization_output/<logfile_basename>/` (or `base_results_folder/images/<logfile_basename>/` if configured):
 
 - `wind_heatmaps/` - Wind speed heatmaps
 - `snr_heatmaps/` - SNR (peak) heatmaps
@@ -101,3 +113,71 @@ Set `debug_mode=true` in `config.txt` for verbose output including:
 - Range extraction calculations
 
 Set `debug_mode=false` for normal output (only essential information).
+
+## Hard Target Analysis
+
+The project includes a comprehensive hard target detection analysis module that evaluates lidar data using multiple criteria to identify potential hard targets (solid objects).
+
+### Quick Start
+
+Run the comprehensive analysis from IDE:
+
+```python
+from hard_target_analysis.comprehensive_analysis import analyze_results
+
+# Simple call - uses config.txt settings
+results = analyze_results(
+    image_folder="visualization_output/output7"
+)
+```
+
+Or use the provided script:
+
+1. Open `hard_target_analysis/run_analysis.py`
+2. Modify `IMAGE_FOLDER` to point to your image folder
+3. Run the script
+
+### Analysis Criteria
+
+The comprehensive analysis evaluates **6 criteria**:
+
+1. **Range-Resolved Signal Intensity Heatmap**
+   - Contiguous high-intensity blob detection
+   - Localization check (not smeared)
+   - Smooth range falloff analysis
+   - Background contrast calculation
+   - Temporal consistency
+   - Speckling detection
+
+2. **Dominant Frequency / Wind Speed Heatmap**
+   - Wind speed plausibility check
+   - Stability across ranges
+   - Smooth transition analysis
+
+3. **FWHM of Dominant Peak Heatmap**
+   - FWHM-intensity correlation
+   - Gradual broadening with range
+   - Checkerboarding detection
+
+4. **Sequential Range Differences (ΔIntensity)**
+   - Gradient sharpness at boundaries
+   - Background stability
+
+5. **Sequential Range Differences (ΔWind)**
+   - Background smoothness
+   - Localization of anomalies
+
+6. **Cross-Parameter Consistency**
+   - Co-location of high intensity + narrow FWHM + stable wind
+   - Edge alignment between ΔIntensity and ΔWind
+
+### Output
+
+The analysis generates:
+- **`comprehensive_analysis_report.json`** - Complete analysis results
+- **`analysis_summary.txt`** - Human-readable summary with promising indicators and red flags
+- **`analysis_visualization.png`** - Visual summary of scores
+
+### Documentation
+
+See `hard_target_analysis/README.md` and `hard_target_analysis/QUICKSTART.md` for detailed documentation.

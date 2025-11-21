@@ -121,8 +121,9 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "5. Data Processing Pipeline",
         "6. Database Storage",
         "7. Analysis and Visualization",
-        "8. Configuration",
-        "9. Usage Examples",
+        "8. Hard Target Analysis",
+        "9. Configuration",
+        "10. Usage Examples",
     ]
     for item in toc_items:
         story.append(Paragraph(item, body_style))
@@ -150,6 +151,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "SQLite database for persistent storage and efficient querying",
         "Range-resolved heatmap visualization for spatial analysis",
         "Single-profile mode for SNR and wind profile analysis with Doppler lidar processing",
+        "Comprehensive hard target detection analysis using multi-criteria evaluation",
+        "Centralized output organization with base results folder support",
         "Configurable processing parameters via simple text file",
     ]
     for feature in features:
@@ -169,6 +172,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         "Analyze range-resolved profiles at specific altitudes",
         "Process power density spectra to compute SNR and wind profiles using Doppler lidar equations",
         "Visualize temporal evolution of SNR and wind profiles across all timestamps",
+        "Perform comprehensive hard target analysis using multiple detection criteria",
+        "Evaluate promising indicators vs red flags for target detection quality",
     ]
     for use_case in use_cases:
         story.append(Paragraph(f"• {use_case}", body_style))
@@ -290,7 +295,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         ("<b>7. Visualization:</b>", 
          "Query database, extract range-resolved values at specific ranges, aggregate by " 
          "azimuth/elevation, and generate heatmaps. Output files are organized into parameter-specific " 
-         "subfolders (wind_heatmaps/, snr_heatmaps/, etc.) within visualization_output/<logfile_basename>/."),
+         "subfolders (wind_heatmaps/, snr_heatmaps/, etc.) within visualization_output/<logfile_basename>/ " 
+         "or base_results_folder/images/<logfile_basename>/ if base_results_folder is configured."),
         ("<b>8. Single-Profile Processing (Mode 3):</b>", 
          "Process range-resolved power density spectra to compute SNR and wind profiles. " 
          "For each timestamp, compute frequencies from FFT size and sampling rate, find maximum " 
@@ -302,6 +308,11 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         ("<b>10. FWHM Processing (Mode 5):</b>", 
          "Compute Full Width at Half Maximum of dominant frequency peaks. " 
          "Output saved to fwhm/ subfolder."),
+        ("<b>11. Hard Target Analysis:</b>", 
+         "Perform comprehensive multi-criteria analysis to detect potential hard targets. " 
+         "Evaluates 6 criteria: intensity patterns, wind stability, FWHM characteristics, " 
+         "sequential differences, and cross-parameter consistency. Generates detailed reports " 
+         "with promising indicators and red flags. Can be run from IDE with simple function call."),
     ]
     
     for stage_title, stage_desc in stages:
@@ -428,8 +439,10 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     story.append(Paragraph("6. Database Storage", heading1_style))
     
     story.append(Paragraph(
-        "The system uses SQLite for persistent storage, enabling efficient querying and long-term "
-        "data retention. The database schema is normalized with separate tables for different data types.",
+        "The system uses SQLite for persistent storage, enabling efficient querying and long-term " 
+        "data retention. The database schema is normalized with separate tables for different data types. "
+        "If base_results_folder is configured, all databases are stored in base_results_folder/databases/ "
+        "while preserving the original database filename structure.",
         body_style
     ))
     
@@ -574,7 +587,8 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
         body_style
     ))
     story.append(Paragraph(
-        "Output files are organized into subfolders within visualization_output/<logfile_basename>/:",
+        "Output files are organized into subfolders within visualization_output/<logfile_basename>/ "
+        "(or base_results_folder/images/<logfile_basename>/ if base_results_folder is configured):",
         body_style
     ))
     output_subfolders = [
@@ -591,6 +605,21 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     
     story.append(Spacer(1, 0.15 * inch))
     story.append(Paragraph(
+        "<b>Centralized Output Organization:</b> When base_results_folder is set in config.txt, "
+        "all outputs are organized under a single base folder:",
+        body_style
+    ))
+    story.append(Paragraph(
+        "• base_results_folder/databases/ - All database files (preserving original names)",
+        body_style
+    ))
+    story.append(Paragraph(
+        "• base_results_folder/images/ - All visualization images (preserving subfolder structure)",
+        body_style
+    ))
+    
+    story.append(Spacer(1, 0.15 * inch))
+    story.append(Paragraph(
         "<b>Range Notation Support:</b> The requested_range_indices parameter supports flexible " 
         "range notation. Single values can be specified as comma-separated lists (e.g., 1,2,3). " 
         "Ranges can be specified using dash notation (e.g., 1-50 expands to 1,2,3,...,50). Mixed " 
@@ -599,8 +628,111 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     story.append(PageBreak())
     
-    # 8. Configuration
-    story.append(Paragraph("8. Configuration", heading1_style))
+    # 8. Hard Target Analysis
+    story.append(Paragraph("8. Hard Target Analysis", heading1_style))
+    
+    story.append(Paragraph(
+        "The system includes a comprehensive hard target detection analysis module that evaluates "
+        "lidar data using multiple criteria to identify potential hard targets (solid objects) that "
+        "could be hit by the lidar beam.",
+        body_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>8.1 Comprehensive Analysis Method</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "The comprehensive analysis evaluates six criteria based on sophisticated detection principles:",
+        body_style
+    ))
+    
+    criteria_list = [
+        ("<b>1. Range-Resolved Signal Intensity Heatmap:</b>", 
+         "Analyzes contiguous high-intensity blobs, localization (not smeared), smooth range falloff, "
+         "background contrast, temporal consistency, and detects speckling (red flag)."),
+        ("<b>2. Dominant Frequency / Wind Speed Heatmap:</b>", 
+         "Checks wind speed plausibility, stability across ranges, and smooth transitions."),
+        ("<b>3. FWHM of Dominant Peak Heatmap:</b>", 
+         "Evaluates FWHM-intensity correlation, gradual broadening with range, and detects "
+         "checkerboarding patterns (red flag)."),
+        ("<b>4. Sequential Range Differences (ΔIntensity):</b>", 
+         "Analyzes gradient sharpness at target boundaries and background stability."),
+        ("<b>5. Sequential Range Differences (ΔWind):</b>", 
+         "Evaluates background smoothness and localization of anomalies."),
+        ("<b>6. Cross-Parameter Consistency:</b>", 
+         "Checks co-location of high intensity + narrow FWHM + stable wind, and edge alignment "
+         "between ΔIntensity and ΔWind."),
+    ]
+    
+    for criterion_title, criterion_desc in criteria_list:
+        story.append(Paragraph(criterion_title, body_style))
+        story.append(Paragraph(criterion_desc, body_style))
+        story.append(Spacer(1, 0.1 * inch))
+    
+    story.append(Paragraph(
+        "<b>8.2 Usage from IDE</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "The analysis can be easily run from IDE with a simple function call:",
+        body_style
+    ))
+    story.append(Paragraph(
+        "<pre>from hard_target_analysis.comprehensive_analysis import analyze_results\n\n"
+        "# Simple call - uses config.txt settings\n"
+        "results = analyze_results(\n"
+        "    image_folder=\"visualization_output/output7\"\n"
+        ")</pre>",
+        code_style
+    ))
+    story.append(Paragraph(
+        "Or use the provided script:",
+        body_style
+    ))
+    story.append(Paragraph(
+        "<pre># Open hard_target_analysis/run_analysis.py\n"
+        "# Modify IMAGE_FOLDER variable\n"
+        "# Run the script</pre>",
+        code_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>8.3 Output Files</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "The analysis generates three output files:",
+        body_style
+    ))
+    output_files = [
+        "<b>comprehensive_analysis_report.json:</b> Complete analysis results with all scores and metadata",
+        "<b>analysis_summary.txt:</b> Human-readable summary with promising indicators and red flags",
+        "<b>analysis_visualization.png:</b> Visual summary showing score breakdowns for each criterion",
+    ]
+    for output_file in output_files:
+        story.append(Paragraph(f"• {output_file}", body_style))
+    
+    story.append(Paragraph(
+        "<b>8.4 Assessment Levels</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "The analysis provides overall assessment levels:",
+        body_style
+    ))
+    assessment_levels = [
+        "<b>PROMISING (Score > 0.7):</b> Strong indicators of hard targets, high confidence",
+        "<b>MODERATE (Score 0.5-0.7):</b> Some indicators present, medium confidence",
+        "<b>POOR (Score < 0.5):</b> Weak or inconsistent indicators, low confidence",
+    ]
+    for level in assessment_levels:
+        story.append(Paragraph(f"• {level}", body_style))
+    
+    story.append(PageBreak())
+    
+    # 9. Configuration
+    story.append(Paragraph("9. Configuration", heading1_style))
     
     story.append(Paragraph(
         "The system uses a simple text-based configuration file (config.txt) with key=value pairs. "
@@ -620,6 +752,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
             "log_file: Path to log file (output.txt)",
             "database_path: SQLite database file path",
             "visualization_output_dir: Output directory for heatmaps",
+            "base_results_folder: Optional base folder for centralized output (databases/ and images/ subfolders)",
         ]),
         ("<b>Processing Parameters:</b>", [
             "timestamp_tolerance: Tolerance for timestamp matching (default: 0.0001 s)",
@@ -634,6 +767,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
             "requested_range_indices: Range notation supported (e.g., 1-50, 1,4-10,8)",
             "heatmap_colormap: Matplotlib colormap name (default: viridis)",
             "heatmap_format: Image format (default: png)",
+            "show_plots: Display plots for 0.5s or save directly (true/false, default: false)",
         ]),
         ("<b>Execution Mode:</b>", [
             "run_mode: Main script mode (test, heatmaps, or profiles)",
@@ -661,11 +795,11 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     
     story.append(PageBreak())
     
-    # 9. Usage Examples
-    story.append(Paragraph("9. Usage Examples", heading1_style))
+    # 10. Usage Examples
+    story.append(Paragraph("10. Usage Examples", heading1_style))
     
     story.append(Paragraph(
-        "<b>9.1 Running Tests</b>",
+        "<b>10.1 Running Tests</b>",
         heading2_style
     ))
     story.append(Paragraph(
@@ -678,7 +812,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "<b>9.2 Generating Heatmaps</b>",
+        "<b>10.2 Generating Heatmaps</b>",
         heading2_style
     ))
     story.append(Paragraph(
@@ -700,7 +834,7 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "<b>9.3 Generating Single Profiles</b>",
+        "<b>10.3 Generating Single Profiles</b>",
         heading2_style
     ))
     story.append(Paragraph(
@@ -719,7 +853,28 @@ def create_pdf(output_path: str | Path = "project_documentation.pdf"):
     ))
     
     story.append(Paragraph(
-        "<b>9.4 Programmatic Usage</b>",
+        "<b>10.4 Hard Target Analysis</b>",
+        heading2_style
+    ))
+    story.append(Paragraph(
+        "Run comprehensive hard target analysis from IDE:",
+        body_style
+    ))
+    story.append(Paragraph(
+        "<pre>from hard_target_analysis.comprehensive_analysis import analyze_results\n\n"
+        "results = analyze_results(\n"
+        "    image_folder=\"visualization_output/output7\",\n"
+        "    output_dir=\"hard_target_analysis_results\"\n"
+        ")\n\n"
+        "# Access results\n"
+        "assessment = results.get(\"overall_assessment\", {})\n"
+        "print(f\"Assessment: {assessment.get('assessment')}\")\n"
+        "print(f\"Score: {assessment.get('overall_score', 0.0):.3f}\")</pre>",
+        code_style
+    ))
+    
+    story.append(Paragraph(
+        "<b>10.5 Programmatic Usage</b>",
         heading2_style
     ))
     story.append(Paragraph(
