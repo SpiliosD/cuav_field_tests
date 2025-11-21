@@ -19,9 +19,9 @@
 # Single values (no commas) work as before for backward compatibility
 processed_root=D:\Raymetrics_Tests\BOMA2025\20250923\Wind
 raw_root=D:\Raymetrics_Tests\BOMA2025\20250923\Spectra\User\20250923\Wind
-log_file=D:\Raymetrics_Tests\BOMA2025\20250923\output9.txt
+log_file=D:\Raymetrics_Tests\BOMA2025\20250923\output11.txt
 output_dir=timestamp_debug_output
-database_path=data/output9.db
+database_path=data/output11.db
 # Processing Parameters
 timestamp_tolerance=0.0001
 timestamp_precision=6
