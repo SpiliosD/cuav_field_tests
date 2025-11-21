@@ -461,7 +461,7 @@ class Config:
     
     @classmethod
     def _normalize_windows_path(cls, path_str: str) -> str:
-        """
+        r"""
         Normalize Windows absolute paths that might be missing the colon.
         Handles cases like 'D\path\to\file' -> 'D:\path\to\file'
         """
