@@ -269,6 +269,7 @@ def create_heatmaps(
     elevation_bins: int | None = None,
     colormap: str = "viridis",
     save_format: str = "png",
+    show_plots: bool = True,
 ) -> dict[str, dict[str, Any]]:
     """
     Create heatmaps for range-resolved parameters at specific ranges.
@@ -531,9 +532,10 @@ def create_heatmaps(
                 plt.savefig(filename, dpi=300, bbox_inches="tight")
                 print(f"✓ Saved heatmap: {filename}")
                 
-                # Display figure briefly (0.5 seconds) then close
-                plt.show(block=False)
-                plt.pause(0.5)
+                # Display figure briefly (0.5 seconds) then close if show_plots is True
+                if show_plots:
+                    plt.show(block=False)
+                    plt.pause(0.5)
                 plt.close()
     
     return results
@@ -747,6 +749,7 @@ def create_profile_visualizations(
     starting_range: float,
     output_dir: str | Path | None = None,
     save_format: str = "png",
+    show_plots: bool = True,
 ) -> dict[str, Any]:
     """
     Create visualizations of SNR, wind, and dominant frequency profiles.
@@ -850,9 +853,10 @@ def create_profile_visualizations(
             print(f"✓ Saved SNR profiles plot: {filename}")
             results["snr_plot_path"] = str(filename)
         
-        # Display figure briefly (0.5 seconds) then close
-        plt.show(block=False)
-        plt.pause(0.5)
+        # Display figure briefly (0.5 seconds) then close if show_plots is True
+        if show_plots:
+            plt.show(block=False)
+            plt.pause(0.5)
         plt.close()
         results["snr_profiles"] = snr_profiles
         results["snr_ranges"] = ranges
@@ -878,9 +882,10 @@ def create_profile_visualizations(
             print(f"✓ Saved wind profiles plot: {filename}")
             results["wind_plot_path"] = str(filename)
         
-        # Display figure briefly (0.5 seconds) then close
-        plt.show(block=False)
-        plt.pause(0.5)
+        # Display figure briefly (0.5 seconds) then close if show_plots is True
+        if show_plots:
+            plt.show(block=False)
+            plt.pause(0.5)
         plt.close()
         results["wind_profiles"] = wind_profiles
         results["wind_ranges"] = ranges
@@ -906,9 +911,10 @@ def create_profile_visualizations(
             print(f"✓ Saved dominant frequency profiles plot: {filename}")
             results["dominant_frequency_plot_path"] = str(filename)
         
-        # Display figure briefly (0.5 seconds) then close
-        plt.show(block=False)
-        plt.pause(0.5)
+        # Display figure briefly (0.5 seconds) then close if show_plots is True
+        if show_plots:
+            plt.show(block=False)
+            plt.pause(0.5)
         plt.close()
         results["dominant_frequency_profiles"] = dominant_frequency_profiles
         results["dominant_frequency_ranges"] = ranges
@@ -1217,6 +1223,7 @@ def create_difference_heatmaps(
     azimuth_bins: int | None = None,
     elevation_bins: int | None = None,
     colormap: str = "coolwarm",
+    show_plots: bool = True,
     save_format: str = "png",
 ) -> dict[str, dict[str, Any]]:
     """
@@ -1381,8 +1388,10 @@ def create_difference_heatmaps(
             plt.savefig(filename, dpi=300, bbox_inches="tight")
             print(f"✓ Saved {difference_type} difference heatmap: {filename}")
             
-            plt.show(block=False)
-            plt.pause(0.5)
+            # Display figure briefly (0.5 seconds) then close if show_plots is True
+            if show_plots:
+                plt.show(block=False)
+                plt.pause(0.5)
             plt.close()
     
     return results
@@ -1397,6 +1406,7 @@ def create_fwhm_heatmaps(
     azimuth_bins: int | None = None,
     elevation_bins: int | None = None,
     colormap: str = "viridis",
+    show_plots: bool = True,
     save_format: str = "png",
 ) -> dict[str, dict[str, Any]]:
     """
@@ -1531,8 +1541,10 @@ def create_fwhm_heatmaps(
             plt.savefig(filename, dpi=300, bbox_inches="tight")
             print(f"✓ Saved FWHM heatmap: {filename}")
             
-            plt.show(block=False)
-            plt.pause(0.5)
+            # Display figure briefly (0.5 seconds) then close if show_plots is True
+            if show_plots:
+                plt.show(block=False)
+                plt.pause(0.5)
             plt.close()
     
     return results

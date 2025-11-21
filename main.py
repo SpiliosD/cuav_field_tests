@@ -330,17 +330,25 @@ def run_tests():
         raise
 
 
-def get_logfile_basename() -> str:
+def get_logfile_basename(log_file: Path | None = None) -> str:
     """
     Get the basename of the logfile (without extension) for creating output subdirectories.
     
-    If multiple log files are configured, uses the first one.
+    Parameters
+    ----------
+    log_file : Path | None
+        Specific log file to get basename from. If None, uses the first configured log file.
     
     Returns
     -------
     str
         Basename of logfile without extension, or 'output' if logfile not configured
     """
+    if log_file is not None:
+        if log_file.exists():
+            return log_file.stem
+        return "output"
+    
     log_files = Config.get_log_file_paths()
     if len(log_files) == 0:
         return "output"
@@ -356,6 +364,8 @@ def generate_heatmaps(
     output_dir: Path | None = None,
     colormap: str = "viridis",
     save_format: str = "png",
+    db_path: Path | None = None,
+    log_file: Path | None = None,
 ):
     """
     Generate heatmaps for specified parameters at specified ranges.
@@ -407,27 +417,15 @@ def generate_heatmaps(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Get database path (should already exist from main() if multimode, or will be created if single mode)
-    # Check if database exists, create if needed (for single-mode runs)
-    db_path = Config.get_database_path()
+    # Get database path (use provided or from config)
     if db_path is None:
-        print("✗ ERROR: Database path not configured in config.txt", flush=True)
-        return False
-    
-    if not db_path.exists():
-        print("Database does not exist. Creating database first...", flush=True)
-        if not create_or_rebuild_database():
-            print("✗ ERROR: Failed to create database. Cannot generate heatmaps.", flush=True)
+        db_path = Config.get_database_path()
+        if db_path is None:
+            print("✗ ERROR: Database path not configured in config.txt", flush=True)
             return False
     
-    # Get database path (should exist now)
-    db_path = Config.get_database_path()
-    if db_path is None:
-        print("✗ ERROR: Database path not configured in config.txt", flush=True)
-        return False
-    
     if not db_path.exists():
-        print(f"✗ ERROR: Database was not created at {db_path}", flush=True)
+        print(f"✗ ERROR: Database does not exist at {db_path}", flush=True)
         return False
     
     # Get visualization parameters from config (or use provided)
@@ -456,11 +454,11 @@ def generate_heatmaps(
     if output_dir is None:
         base_output_dir = Config.get_visualization_output_dir_path()
         # Create subdirectory named after logfile (without extension)
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = base_output_dir / logfile_basename
     else:
         # Even if output_dir is provided, append logfile basename subdirectory
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
@@ -507,6 +505,7 @@ def generate_heatmaps(
             parameter_subdirs=parameter_subdirs,  # Pass parameter-specific subdirectories
             colormap=colormap,
             save_format=save_format,
+            show_plots=Config.SHOW_PLOTS,
         )
         
         print()
@@ -566,6 +565,8 @@ def generate_heatmaps(
 def generate_differences(
     output_dir: Path | None = None,
     save_format: str = "png",
+    db_path: Path | None = None,
+    log_file: Path | None = None,
 ):
     """
     Generate sequential difference analysis (Mode 4).
@@ -619,11 +620,11 @@ def generate_differences(
     
     if output_dir is None:
         base_output_dir = Config.get_visualization_output_dir_path()
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = base_output_dir / logfile_basename
     else:
         # Even if output_dir is provided, append logfile basename subdirectory
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
@@ -671,6 +672,7 @@ def generate_differences(
             output_dir=snr_diff_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
+            show_plots=Config.SHOW_PLOTS,
         )
         
         # Step 3: Generate heatmaps for wind differences
@@ -688,6 +690,7 @@ def generate_differences(
             output_dir=wind_diff_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
+            show_plots=Config.SHOW_PLOTS,
         )
         
         print()
@@ -705,6 +708,8 @@ def generate_differences(
 def generate_fwhm(
     output_dir: Path | None = None,
     save_format: str = "png",
+    db_path: Path | None = None,
+    log_file: Path | None = None,
 ):
     """
     Generate FWHM analysis (Mode 5).
@@ -736,15 +741,16 @@ def generate_fwhm(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Get database path
-    db_path = Config.get_database_path()
+    # Get database path (use provided or from config)
     if db_path is None:
-        print("✗ ERROR: Database path not configured in config.txt", flush=True)
-        return False
+        db_path = Config.get_database_path()
+        if db_path is None:
+            print("✗ ERROR: Database path not configured in config.txt", flush=True)
+            return False
     
-    # Check if database exists (should already exist from main() if multimode)
+    # Check if database exists
     if not db_path.exists():
-        print("✗ ERROR: Database does not exist. Please run profiles mode first to generate profile data.", flush=True)
+        print(f"✗ ERROR: Database does not exist at {db_path}. Please run profiles mode first to generate profile data.", flush=True)
         return False
     
     # Get visualization parameters from config
@@ -763,11 +769,11 @@ def generate_fwhm(
     
     if output_dir is None:
         base_output_dir = Config.get_visualization_output_dir_path()
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = base_output_dir / logfile_basename
     else:
         # Even if output_dir is provided, append logfile basename subdirectory
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
@@ -819,6 +825,7 @@ def generate_fwhm(
             output_dir=fwhm_subdir,
             colormap=Config.HEATMAP_COLORMAP,
             save_format=save_format,
+            show_plots=Config.SHOW_PLOTS,
         )
         
         print()
@@ -836,6 +843,8 @@ def generate_fwhm(
 def generate_profiles(
     output_dir: Path | None = None,
     save_format: str = "png",
+    db_path: Path | None = None,
+    log_file: Path | None = None,
 ):
     """
     Generate single-profile visualizations (Mode 3).
@@ -872,18 +881,17 @@ def generate_profiles(
     print("=" * 70, flush=True)
     print(flush=True)
     
-    # Get database path
-    db_path = Config.get_database_path()
+    # Get database path (use provided or from config)
     if db_path is None:
-        print("✗ ERROR: Database path not configured in config.txt", flush=True)
-        return False
-    
-    # Check if database exists, create if needed (for single-mode runs)
-    if not db_path.exists():
-        print("Database does not exist. Creating database first...", flush=True)
-        if not create_or_rebuild_database():
-            print("✗ ERROR: Failed to create database. Cannot generate profiles.", flush=True)
+        db_path = Config.get_database_path()
+        if db_path is None:
+            print("✗ ERROR: Database path not configured in config.txt", flush=True)
             return False
+    
+    # Check if database exists
+    if not db_path.exists():
+        print(f"✗ ERROR: Database does not exist at {db_path}", flush=True)
+        return False
     
     # Get visualization parameters from config
     range_step = Config.RANGE_STEP
@@ -899,11 +907,11 @@ def generate_profiles(
     if output_dir is None:
         base_output_dir = Config.get_visualization_output_dir_path()
         # Create subdirectory named after logfile (without extension)
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = base_output_dir / logfile_basename
     else:
         # Even if output_dir is provided, append logfile basename subdirectory
-        logfile_basename = get_logfile_basename()
+        logfile_basename = get_logfile_basename(log_file)
         output_dir = Path(output_dir) / logfile_basename
     
     # Ensure output directory exists
@@ -956,6 +964,7 @@ def generate_profiles(
             starting_range=starting_range,
             output_dir=profiles_subdir,
             save_format=save_format,
+            show_plots=Config.SHOW_PLOTS,
         )
         
         print()
@@ -1246,81 +1255,105 @@ Note:
                 sys.exit(1)
             print(flush=True)
             
-            # Run profiles FIRST if requested (needed for differences and FWHM)
-            if run_profiles:
-                print(f">>> Executing profiles mode...", flush=True, file=sys.stderr)
-                # Get options from command-line or config
-                save_format = args.format if args.format else Config.HEATMAP_FORMAT
-                
-                profile_success = generate_profiles(
-                    output_dir=args.output_dir,
-                    save_format=save_format,
-                )
-                
-                if not profile_success:
-                    success = False
+            # Get all dataset configurations to process each one separately
+            dataset_configs = Config.get_dataset_configs()
             
-            # Run heatmaps if requested
-            if run_heatmaps:
-                print(f">>> Executing heatmaps mode...", flush=True, file=sys.stderr)
-                # Get parameters from command-line or config
-                if args.parameters:
-                    parameters = args.parameters
-                else:
-                    # Parse from config
-                    parameters = Config.get_heatmap_parameters()
-                    if not parameters:
-                        # Default if nothing specified
-                        parameters = ["wind", "peak", "spectrum"]
-                        print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
+            # Process each dataset configuration separately
+            for config_idx, (processed_root, raw_root, log_file, db_path) in enumerate(dataset_configs, 1):
+                if db_path is None or not db_path.exists():
+                    print(f"⚠ WARNING: Skipping dataset {config_idx}: database not found or not configured", flush=True)
+                    continue
                 
-                # Get ranges from command-line or config
-                if args.ranges:
-                    try:
-                        ranges_list = parse_ranges(args.ranges)
-                    except ValueError as e:
-                        print(f"✗ ERROR: Invalid ranges format: {e}")
-                        print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
-                        sys.exit(1)
-                else:
-                    ranges_list = None  # Will use config default in generate_heatmaps()
+                num_datasets = len(dataset_configs)
+                if num_datasets > 1:
+                    print("=" * 70, flush=True)
+                    print(f"Processing Dataset {config_idx}/{num_datasets}: {log_file.stem if log_file else 'Unknown'}", flush=True)
+                    print("=" * 70, flush=True)
+                    print(flush=True)
                 
-                # Get other options from command-line or config
-                colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
-                save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                # Run profiles FIRST if requested (needed for differences and FWHM)
+                if run_profiles:
+                    print(f">>> Executing profiles mode for dataset {config_idx}...", flush=True, file=sys.stderr)
+                    # Get options from command-line or config
+                    save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                    
+                    profile_success = generate_profiles(
+                        output_dir=args.output_dir,
+                        save_format=save_format,
+                        db_path=db_path,
+                        log_file=log_file,
+                    )
+                    
+                    if not profile_success:
+                        success = False
                 
-                heatmap_success = generate_heatmaps(
-                    parameters=parameters,
-                    ranges=ranges_list,
-                    output_dir=args.output_dir,
-                    colormap=colormap,
-                    save_format=save_format,
-                )
+                # Run heatmaps if requested
+                if run_heatmaps:
+                    print(f">>> Executing heatmaps mode for dataset {config_idx}...", flush=True, file=sys.stderr)
+                    # Get parameters from command-line or config
+                    if args.parameters:
+                        parameters = args.parameters
+                    else:
+                        # Parse from config
+                        parameters = Config.get_heatmap_parameters()
+                        if not parameters:
+                            # Default if nothing specified
+                            parameters = ["wind", "peak", "spectrum"]
+                            print("⚠ No heatmap_parameters in config.txt, using default: wind, peak, spectrum")
+                    
+                    # Get ranges from command-line or config
+                    if args.ranges:
+                        try:
+                            ranges_list = parse_ranges(args.ranges)
+                        except ValueError as e:
+                            print(f"✗ ERROR: Invalid ranges format: {e}")
+                            print(f"  Example: --ranges '100,200,300' or --ranges '100 200 300'")
+                            sys.exit(1)
+                    else:
+                        ranges_list = None  # Will use config default in generate_heatmaps()
+                    
+                    # Get other options from command-line or config
+                    colormap = args.colormap if args.colormap else Config.HEATMAP_COLORMAP
+                    save_format = args.format if args.format else Config.HEATMAP_FORMAT
+                    
+                    heatmap_success = generate_heatmaps(
+                        parameters=parameters,
+                        ranges=ranges_list,
+                        output_dir=args.output_dir,
+                        colormap=colormap,
+                        save_format=save_format,
+                        db_path=db_path,
+                        log_file=log_file,
+                    )
+                    
+                    if not heatmap_success:
+                        success = False
                 
-                if not heatmap_success:
-                    success = False
-            
-            # Run differences if requested (requires profiles to be run first)
-            if run_differences:
-                print(f">>> Executing differences mode...", flush=True, file=sys.stderr)
-                diff_success = generate_differences(
-                    output_dir=args.output_dir,
-                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
-                )
+                # Run differences if requested (requires profiles to be run first)
+                if run_differences:
+                    print(f">>> Executing differences mode for dataset {config_idx}...", flush=True, file=sys.stderr)
+                    diff_success = generate_differences(
+                        output_dir=args.output_dir,
+                        save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                        db_path=db_path,
+                        log_file=log_file,
+                    )
+                    
+                    if not diff_success:
+                        success = False
                 
-                if not diff_success:
-                    success = False
-            
-            # Run FWHM if requested
-            if run_fwhm:
-                print(f">>> Executing FWHM mode...", flush=True, file=sys.stderr)
-                fwhm_success = generate_fwhm(
-                    output_dir=args.output_dir,
-                    save_format=args.format if args.format else Config.HEATMAP_FORMAT,
-                )
-                
-                if not fwhm_success:
-                    success = False
+                # Run FWHM if requested
+                if run_fwhm:
+                    print(f">>> Executing FWHM mode for dataset {config_idx}...", flush=True, file=sys.stderr)
+                    fwhm_success = generate_fwhm(
+                        output_dir=args.output_dir,
+                        save_format=args.format if args.format else Config.HEATMAP_FORMAT,
+                        db_path=db_path,
+                        log_file=log_file,
+                    )
+                    
+                    if not fwhm_success:
+                        success = False
             
             if not success:
                 sys.exit(1)

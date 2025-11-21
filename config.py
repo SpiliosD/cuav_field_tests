@@ -245,6 +245,11 @@ def _apply_txt_config(config_dict: dict) -> None:
     if "debug_mode" in config_dict:
         debug_str = config_dict["debug_mode"].lower().strip()
         Config.DEBUG_MODE = debug_str in ("true", "1", "yes", "on")
+    
+    # Visualization display mode
+    if "show_plots" in config_dict:
+        show_plots_str = config_dict["show_plots"].lower().strip()
+        Config.SHOW_PLOTS = show_plots_str in ("true", "1", "yes", "on")
 
 
 class Config:
@@ -370,6 +375,11 @@ class Config:
     # When True: prints detailed debug information (database content, matching details, etc.)
     # When False: prints only essential information (normal mode)
     DEBUG_MODE: ClassVar[bool] = False
+    
+    # Show plots during visualization
+    # When True: displays plots for 0.5 seconds before closing
+    # When False: saves plots directly without displaying
+    SHOW_PLOTS: ClassVar[bool] = True
     
     # ============================================================================
     # Visualization Parameters
