@@ -255,6 +255,9 @@ def create_or_rebuild_database() -> bool:
                 # Store full file path so we can extract both directory and filename later
                 timestamp_path_pairs.append((processed_ts, str(raw_file_path)))
             
+            # Ensure database directory exists
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            
             # Remove existing database if it exists (only for this specific database path)
             if db_path.exists():
                 print(f"    Removing existing database: {db_path}", flush=True)

@@ -100,6 +100,9 @@ def _apply_txt_config(config_dict: dict) -> None:
     if "output_dir" in config_dict:
         Config.OUTPUT_DIR = config_dict["output_dir"]
     
+    if "base_results_folder" in config_dict:
+        Config.BASE_RESULTS_FOLDER = config_dict["base_results_folder"]
+    
     if "database_path" in config_dict:
         value = config_dict["database_path"].strip()
         if value:
@@ -287,6 +290,12 @@ class Config:
     
     # Output directory for debug files, CSV exports, etc.
     OUTPUT_DIR: ClassVar[str] = "timestamp_debug_output"
+    
+    # Base folder for all results (databases and images)
+    # If set, databases will be saved to: base_results_folder/databases/
+    # and images will be saved to: base_results_folder/images/
+    # If None or empty, uses original paths (backward compatibility)
+    BASE_RESULTS_FOLDER: ClassVar[str | None] = None
     
     # Database file path for storing aggregated data (single value, for backward compatibility)
     # If None, database storage is disabled
@@ -532,19 +541,60 @@ class Config:
             db_path = cls.DATABASE_PATHS[0]
             if db_path is None:
                 return None
-            return Path(db_path).expanduser().resolve()
-        if cls.DATABASE_PATH is None:
-            return None
-        return Path(cls.DATABASE_PATH).expanduser().resolve()
+            path_str = db_path
+        else:
+            if cls.DATABASE_PATH is None:
+                return None
+            path_str = cls.DATABASE_PATH
+        
+        path = Path(path_str)
+        
+        # If base_results_folder is set, prepend it with databases subfolder
+        if cls.BASE_RESULTS_FOLDER and cls.BASE_RESULTS_FOLDER.strip():
+            base_folder = Path(cls._normalize_windows_path(cls.BASE_RESULTS_FOLDER)).expanduser().resolve()
+            # Check if original path is absolute before resolving
+            if path.is_absolute():
+                # Use just the filename from the absolute path
+                path = base_folder / "databases" / path.name
+            else:
+                # Use the relative path as-is under databases/
+                path = base_folder / "databases" / path
+            return path.resolve()
+        else:
+            return path.expanduser().resolve()
     
     @classmethod
     def get_database_paths(cls) -> list[Path | None]:
         """Get all database file paths as Path objects."""
         if hasattr(cls, 'DATABASE_PATHS') and len(cls.DATABASE_PATHS) > 0:
-            return [Path(p).expanduser().resolve() if p is not None else None for p in cls.DATABASE_PATHS]
-        if cls.DATABASE_PATH is None:
-            return [None]
-        return [Path(cls.DATABASE_PATH).expanduser().resolve()]
+            db_paths = cls.DATABASE_PATHS
+        else:
+            if cls.DATABASE_PATH is None:
+                return [None]
+            db_paths = [cls.DATABASE_PATH]
+        
+        result = []
+        for db_path in db_paths:
+            if db_path is None:
+                result.append(None)
+                continue
+            
+            path = Path(db_path)
+            # If base_results_folder is set, prepend it with databases subfolder
+            if cls.BASE_RESULTS_FOLDER and cls.BASE_RESULTS_FOLDER.strip():
+                base_folder = Path(cls._normalize_windows_path(cls.BASE_RESULTS_FOLDER)).expanduser().resolve()
+                # Check if original path is absolute before resolving
+                if path.is_absolute():
+                    # Use just the filename from the absolute path
+                    path = base_folder / "databases" / path.name
+                else:
+                    # Use the relative path as-is under databases/
+                    path = base_folder / "databases" / path
+                result.append(path.resolve())
+            else:
+                result.append(path.expanduser().resolve())
+        
+        return result
     
     @classmethod
     def get_dataset_configs(cls) -> list[tuple[Path, Path, Path, Path | None]]:
@@ -577,7 +627,21 @@ class Config:
     @classmethod
     def get_visualization_output_dir_path(cls) -> Path:
         """Get visualization output directory as Path object."""
-        return Path(cls.VISUALIZATION_OUTPUT_DIR).expanduser().resolve()
+        path = Path(cls.VISUALIZATION_OUTPUT_DIR)
+        
+        # If base_results_folder is set, prepend it with images subfolder
+        if cls.BASE_RESULTS_FOLDER and cls.BASE_RESULTS_FOLDER.strip():
+            base_folder = Path(cls._normalize_windows_path(cls.BASE_RESULTS_FOLDER)).expanduser().resolve()
+            # Check if original path is absolute before resolving
+            if path.is_absolute():
+                # Use just the name from the absolute path
+                path = base_folder / "images" / path.name
+            else:
+                # Use the relative path as-is under images/
+                path = base_folder / "images" / path
+            return path.resolve()
+        else:
+            return path.expanduser().resolve()
     
     @classmethod
     def is_debug_mode(cls) -> bool:
