@@ -17,9 +17,9 @@
 # This creates 3 dataset configurations: (path1,raw1,log1.txt,db1.db), (path2,raw2,log2.txt,db2.db), etc.
 # 
 # Single values (no commas) work as before for backward compatibility
-processed_root=G:\Raymetrics_Tests\BOMA2025\20250923\Wind, G:\Raymetrics_Tests\BOMA2025\20250923\Wind
-raw_root=G:\Raymetrics_Tests\BOMA2025\20250923\Spectra\User\20250923\Wind, G:\Raymetrics_Tests\BOMA2025\20250923\Spectra\User\20250923\Wind
-log_file=G:\Raymetrics_Tests\BOMA2025\20250923\output7.txt, G:\Raymetrics_Tests\BOMA2025\20250923\output8.txt
+processed_root=D:\Raymetrics_Tests\BOMA2025\20250922\Wind,D:\Raymetrics_Tests\BOMA2025\20250922\Wind,D:\Raymetrics_Tests\BOMA2025\20250922\Wind,D:\Raymetrics_Tests\BOMA2025\20250922\Wind,D:\Raymetrics_Tests\BOMA2025\20250922\Wind,D:\Raymetrics_Tests\BOMA2025\20250922\Wind,
+raw_root=D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind, D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind, D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind, D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind, D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind, D:\Raymetrics_Tests\BOMA2025\20250922\Spectra\User\20250922\Wind
+log_file=D:\Raymetrics_Tests\BOMA2025\20250922\output1_new.txt, D:\Raymetrics_Tests\BOMA2025\20250922\output2_new.txt, D:\Raymetrics_Tests\BOMA2025\20250922\output3_new.txt, D:\Raymetrics_Tests\BOMA2025\20250922\output4_new.txt, D:\Raymetrics_Tests\BOMA2025\20250922\output5_new.txt, D:\Raymetrics_Tests\BOMA2025\20250922\output6_new.txt
 output_dir=timestamp_debug_output
 
 # Base Results Folder
@@ -27,10 +27,10 @@ output_dir=timestamp_debug_output
 # and all images will be saved to: base_results_folder/images/
 # The subfolder structure (logfile basenames, parameter subfolders) is preserved
 # If not set or empty, uses original paths (backward compatible)
-# Example: base_results_folder=G:\Results\20250923
-base_results_folder=G:\Raymetrics_Tests\BOMA2025\Analysis
+# Example: base_results_folder=D:\Results\20250922
+base_results_folder=D:\Raymetrics_Tests\BOMA2025\Analysis
 
-database_path=data/output7.db, data/output8.db
+database_path=data/output1_new.db, data/output2_new.db, data/output3_new.db, data/output4_new.db, data/output5_new.db, data/output6_new.db
 # Processing Parameters
 timestamp_tolerance=0.0001
 timestamp_precision=6

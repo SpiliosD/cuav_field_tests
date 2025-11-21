@@ -23,10 +23,10 @@ from config import Config
 Config.load_from_file(silent=False)
 
 # Folder containing log files matching output*.txt pattern
-LOG_FOLDER = "G:/Raymetrics_Tests/BOMA2025/20250922"
+LOG_FOLDER = "D:/Raymetrics_Tests/BOMA2025/20250922"
 
 # Folder containing _Peak.txt files
-PEAK_FOLDER = "G:/Raymetrics_Tests/BOMA2025/20250922/Wind"
+PEAK_FOLDER = "D:/Raymetrics_Tests/BOMA2025/20250922/Wind"
 
 # SNR threshold in dB for profile values
 # Timestamps where any SNR value exceeds this threshold within the specified distance interval are considered
