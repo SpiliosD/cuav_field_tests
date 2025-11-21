@@ -90,15 +90,24 @@ class TimestampSynchronizer:
         self.processed_data_start_column = processed_data_start_column
         
         # Get range parameters from Config if not provided
-        Config.load_from_file(silent=True)
+        try:
+            Config.load_from_file(silent=True)
+        except Exception:
+            # Config might already be loaded or file might not exist
+            pass
+        
         self.range_step = range_step if range_step is not None else Config.RANGE_STEP
         self.starting_range_index = starting_range_index if starting_range_index is not None else Config.STARTING_RANGE_INDEX
         
         # Convert distance interval to range indices if provided
         if distance_interval is not None:
             min_distance, max_distance = distance_interval
+            # Convert distance to range index using the formula: index = round(distance / range_step + starting_range_index)
             min_index = Config.distance_to_range_index(min_distance)
             max_index = Config.distance_to_range_index(max_distance)
+            # Ensure min_index <= max_index
+            if min_index > max_index:
+                min_index, max_index = max_index, min_index
             # Create list of all indices within the range (inclusive)
             self.range_indices = list(range(min_index, max_index + 1))
         else:
