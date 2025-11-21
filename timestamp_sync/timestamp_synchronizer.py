@@ -1,8 +1,18 @@
 """Timestamp Synchronization based on Peak Profile Thresholds.
 
 This module synchronizes timestamps between log files and peak profile files
-by detecting timestamps where profile values exceed a threshold and matching
-them with corresponding log file entries.
+by detecting timestamps where SNR values exceed a threshold within a specified
+distance interval, finding the log file that brackets each detected timestamp,
+and replacing the closest timestamp in that log file.
+
+The synchronization process:
+1. Loads all output*.txt files (azimuth, elevation, timestamp)
+2. Loads all _Peak.txt files from subfolders (timestamp in column 3, SNR in dB from column 4+)
+3. Identifies profile timestamps where any SNR value within the specified distance interval exceeds the threshold
+4. For each detected timestamp, finds the output*.txt file whose timestamps bracket it
+5. Locates within that file the closest timestamp to the detected one
+6. Replaces that timestamp with the detected one
+7. Writes the result to new files named output*_new.txt without modifying the originals
 """
 
 from __future__ import annotations
@@ -13,8 +23,9 @@ import numpy as np
 import re
 from collections import defaultdict
 
-from data_reader.parsing.logs import read_log_files
+from data_reader.parsing.logs import read_log_files, extract_log_timestamps
 from data_reader.reading.readers import read_processed_data_file
+from config import Config
 
 
 class TimestampSynchronizer:
@@ -22,23 +33,26 @@ class TimestampSynchronizer:
     Synchronizes timestamps between log files and peak profile files.
     
     The synchronization process:
-    1. Loads all log files matching output*.txt pattern
-    2. Loads all _Peak.txt files
-    3. Identifies timestamps where profile values fall within the specified intensity range
-    4. Matches log file entries with peak file timestamps
-    5. Replaces log timestamps with closest peak timestamps
-    6. Saves modified log files with _new.txt suffix
+    1. Loads all log files matching output*.txt pattern (3 columns: azimuth, elevation, timestamp)
+    2. Loads all _Peak.txt files from subfolders (timestamp in column 3, SNR in dB from column 4+)
+    3. Identifies profile timestamps where any SNR value within the specified distance interval exceeds the threshold
+    4. For each detected timestamp, finds the output*.txt file whose timestamps bracket it
+    5. Locates within that file the closest timestamp to the detected one
+    6. Replaces that timestamp with the detected one
+    7. Writes the result to new files named output*_new.txt without modifying the originals
     """
     
     def __init__(
         self,
         log_folder: str | Path,
         peak_folder: str | Path,
-        intensity_threshold: float = 0.0,
-        range_indices: list[int] | None = None,
+        snr_threshold: float = 0.0,
+        distance_interval: tuple[float, float] | None = None,
         timestamp_tolerance: float = 0.1,
         processed_timestamp_column: int = 2,
         processed_data_start_column: int = 3,
+        range_step: float | None = None,
+        starting_range_index: int | None = None,
     ):
         """
         Initialize the timestamp synchronizer.
@@ -48,28 +62,47 @@ class TimestampSynchronizer:
         log_folder : str | Path
             Folder containing log files matching output*.txt pattern
         peak_folder : str | Path
-            Folder containing _Peak.txt files
-        intensity_threshold : float
-            Threshold for profile values. Timestamps where intensity exceeds this
-            threshold in the specified range indices are considered (default: 0.0)
-        range_indices : list[int] | None
-            List of range indices (column indices) to check in the profile.
-            Only these specific ranges are checked for intensity > threshold.
+            Folder containing subfolders with _Peak.txt files
+        snr_threshold : float
+            SNR threshold in dB. Timestamps where any SNR value exceeds this
+            threshold within the specified distance interval are considered (default: 0.0)
+        distance_interval : tuple[float, float] | None
+            Distance interval in meters (min_distance, max_distance).
+            Only SNR values within this distance range are checked.
             If None, checks all ranges (default: None)
         timestamp_tolerance : float
             Maximum time difference for matching (seconds, default: 0.1)
         processed_timestamp_column : int
-            Column index for timestamps in _Peak.txt files (default: 2)
+            Column index for timestamps in _Peak.txt files (default: 2, 0-indexed, so column 3)
         processed_data_start_column : int
-            Column index where profile data starts in _Peak.txt files (default: 3)
+            Column index where SNR data starts in _Peak.txt files (default: 3, 0-indexed, so column 4)
+        range_step : float | None
+            Range step in meters for converting distance to indices (default: from Config)
+        starting_range_index : int | None
+            Starting range index for converting distance to indices (default: from Config)
         """
         self.log_folder = Path(log_folder)
         self.peak_folder = Path(peak_folder)
-        self.intensity_threshold = intensity_threshold
-        self.range_indices = range_indices  # None means check all ranges
+        self.snr_threshold = snr_threshold
+        self.distance_interval = distance_interval
         self.timestamp_tolerance = timestamp_tolerance
         self.processed_timestamp_column = processed_timestamp_column
         self.processed_data_start_column = processed_data_start_column
+        
+        # Get range parameters from Config if not provided
+        Config.load_from_file(silent=True)
+        self.range_step = range_step if range_step is not None else Config.RANGE_STEP
+        self.starting_range_index = starting_range_index if starting_range_index is not None else Config.STARTING_RANGE_INDEX
+        
+        # Convert distance interval to range indices if provided
+        if distance_interval is not None:
+            min_distance, max_distance = distance_interval
+            min_index = Config.distance_to_range_index(min_distance)
+            max_index = Config.distance_to_range_index(max_distance)
+            # Create list of all indices within the range (inclusive)
+            self.range_indices = list(range(min_index, max_index + 1))
+        else:
+            self.range_indices = None  # Check all ranges
         
         if not self.log_folder.exists():
             raise FileNotFoundError(f"Log folder not found: {self.log_folder}")
@@ -134,27 +167,28 @@ class TimestampSynchronizer:
         peak_data: dict[str, Any],
     ) -> np.ndarray:
         """
-        Identify timestamps where profile values exceed threshold in specific range indices.
+        Identify timestamps where SNR values exceed threshold within the specified distance interval.
         
         Parameters
         ----------
         peak_data : dict
             Dictionary with 'timestamps' and 'profiles' keys
+            profiles contains SNR values in dB
             
         Returns
         -------
         np.ndarray
-            Array of timestamps where intensity exceeds threshold in the specified range indices
+            Array of timestamps where SNR exceeds threshold in the specified distance interval
         """
         timestamps = peak_data["timestamps"]
-        profiles = peak_data["profiles"]
+        profiles = peak_data["profiles"]  # SNR values in dB
         
         # Determine which range indices to check
         if self.range_indices is None:
             # Check all ranges
             range_indices_to_check = list(range(profiles.shape[1]))
         else:
-            # Check only specified range indices
+            # Check only specified range indices (converted from distance interval)
             range_indices_to_check = self.range_indices
             # Validate indices
             max_index = profiles.shape[1] - 1
@@ -167,26 +201,31 @@ class TimestampSynchronizer:
             print(f"  Warning: No valid range indices to check. Skipping this file.")
             return np.array([])
         
-        # Check if intensity exceeds threshold in specified ranges for each timestamp
+        # Check if SNR exceeds threshold in specified ranges for each timestamp
         exceeds_threshold_mask = np.zeros(len(timestamps), dtype=bool)
         
         for i in range(len(timestamps)):
-            profile_values = profiles[i, :]  # All range values for this timestamp
-            # Check only the specified range indices
-            values_in_specified_ranges = profile_values[range_indices_to_check]
-            # Check if any value in specified ranges exceeds threshold
-            exceeds = np.any(values_in_specified_ranges > self.intensity_threshold)
+            snr_values = profiles[i, :]  # All SNR values for this timestamp (in dB)
+            # Check only the specified range indices (within distance interval)
+            snr_in_distance_interval = snr_values[range_indices_to_check]
+            # Check if any SNR value in specified distance interval exceeds threshold
+            exceeds = np.any(snr_in_distance_interval > self.snr_threshold)
             exceeds_threshold_mask[i] = exceeds
         
-        range_timestamps = timestamps[exceeds_threshold_mask]
+        detected_timestamps = timestamps[exceeds_threshold_mask]
         
-        range_str = f"indices {range_indices_to_check}" if self.range_indices else "all ranges"
+        if self.distance_interval:
+            min_dist, max_dist = self.distance_interval
+            range_str = f"distance {min_dist:.0f}-{max_dist:.0f} m (indices {range_indices_to_check[0]}-{range_indices_to_check[-1]})"
+        else:
+            range_str = f"all ranges (indices {range_indices_to_check[0]}-{range_indices_to_check[-1]})"
+        
         print(
-            f"  Found {len(range_timestamps)} timestamps with intensity > {self.intensity_threshold} "
+            f"  Found {len(detected_timestamps)} timestamps with SNR > {self.snr_threshold} dB "
             f"in {range_str}"
         )
         
-        return range_timestamps
+        return detected_timestamps
     
     def load_log_file(self, log_file: Path) -> dict[str, Any]:
         """
@@ -231,7 +270,7 @@ class TimestampSynchronizer:
         self,
         target_timestamp: float,
         reference_timestamps: np.ndarray,
-    ) -> tuple[float | None, float]:
+    ) -> tuple[int | None, float | None, float]:
         """
         Find the closest timestamp in reference_timestamps to target_timestamp.
         
@@ -244,12 +283,12 @@ class TimestampSynchronizer:
             
         Returns
         -------
-        tuple[float | None, float]
-            (closest_timestamp, time_difference)
-            Returns (None, inf) if no timestamp within tolerance
+        tuple[int | None, float | None, float]
+            (closest_index, closest_timestamp, time_difference)
+            Returns (None, None, inf) if no timestamp within tolerance
         """
         if len(reference_timestamps) == 0:
-            return None, np.inf
+            return None, None, np.inf
         
         # Calculate absolute differences
         differences = np.abs(reference_timestamps - target_timestamp)
@@ -257,54 +296,167 @@ class TimestampSynchronizer:
         min_difference = differences[min_idx]
         
         if min_difference <= self.timestamp_tolerance:
-            return float(reference_timestamps[min_idx]), float(min_difference)
+            return int(min_idx), float(reference_timestamps[min_idx]), float(min_difference)
         else:
-            return None, float(min_difference)
+            return None, None, float(min_difference)
     
-    def synchronize_log_file(
+    def find_bracketing_log_file(
         self,
-        log_data: dict[str, Any],
-        peak_timestamps: np.ndarray,
-    ) -> dict[str, Any]:
+        target_timestamp: float,
+        log_files_data: list[dict[str, Any]],
+    ) -> tuple[dict[str, Any] | None, bool]:
         """
-        Synchronize log file timestamps with peak file timestamps.
+        Find the log file whose timestamps bracket the target timestamp.
+        
+        A log file brackets a timestamp if it has at least one timestamp before
+        and at least one timestamp after the target timestamp.
+        
+        If multiple files bracket the timestamp, selects the one with the tightest
+        bracket (smallest time span between the closest before and after timestamps).
         
         Parameters
         ----------
-        log_data : dict
-            Log file data dictionary
-        peak_timestamps : np.ndarray
-            Array of peak file timestamps to match against
+        target_timestamp : float
+            Target timestamp to bracket
+        log_files_data : list[dict]
+            List of log file data dictionaries, each with 'timestamps' key
             
         Returns
         -------
-        dict
-            Modified log data with synchronized timestamps
+        tuple[dict | None, bool]
+            (bracketing_log_file, found_exact_bracket)
+            Returns (None, False) if no log file brackets the timestamp
+            found_exact_bracket is True if timestamps are on both sides, False if only one side
         """
-        log_timestamps = log_data["timestamps"]
+        best_bracket = None
+        best_bracket_span = np.inf
+        best_is_exact = False
         
-        if len(log_timestamps) == 0 or len(peak_timestamps) == 0:
-            print(f"  No timestamps to synchronize")
-            return log_data.copy()
-        
-        # Create mapping: log_timestamp -> closest_peak_timestamp
-        synchronized_timestamps = log_timestamps.copy()
-        replacement_count = 0
-        
-        for i, log_ts in enumerate(log_timestamps):
-            closest_ts, time_diff = self.find_closest_timestamp(log_ts, peak_timestamps)
+        # First pass: find all files with perfect brackets (timestamps on both sides)
+        perfect_brackets = []
+        for log_data in log_files_data:
+            timestamps = log_data["timestamps"]
+            if len(timestamps) == 0:
+                continue
             
-            if closest_ts is not None:
-                synchronized_timestamps[i] = closest_ts
-                replacement_count += 1
+            # Check if any timestamp is before and any is after
+            timestamps_before = timestamps < target_timestamp
+            timestamps_after = timestamps > target_timestamp
+            
+            has_before = np.any(timestamps_before)
+            has_after = np.any(timestamps_after)
+            
+            # Perfect bracket: has timestamps on both sides
+            if has_before and has_after:
+                # Calculate bracket span (distance from closest before to closest after)
+                before_timestamps = timestamps[timestamps_before]
+                after_timestamps = timestamps[timestamps_after]
+                
+                # Find closest before and after
+                closest_before = np.max(before_timestamps)
+                closest_after = np.min(after_timestamps)
+                bracket_span = closest_after - closest_before
+                
+                perfect_brackets.append((log_data, bracket_span))
         
-        print(f"  Replaced {replacement_count} out of {len(log_timestamps)} timestamps")
+        # Select the tightest perfect bracket
+        if perfect_brackets:
+            best_bracket, best_bracket_span = min(perfect_brackets, key=lambda x: x[1])
+            return best_bracket, True
         
-        # Create modified log data
-        modified_data = log_data.copy()
-        modified_data["timestamps"] = synchronized_timestamps
+        # If no perfect bracket found, find best partial match (timestamps on one side only)
+        # This should rarely happen, but handle it for robustness
+        best_partial = None
+        best_partial_distance = np.inf
         
-        return modified_data
+        for log_data in log_files_data:
+            timestamps = log_data["timestamps"]
+            if len(timestamps) == 0:
+                continue
+            
+            # Find closest timestamp (on either side)
+            differences = np.abs(timestamps - target_timestamp)
+            min_idx = np.argmin(differences)
+            min_distance = differences[min_idx]
+            
+            if min_distance < best_partial_distance:
+                best_partial_distance = min_distance
+                best_partial = log_data
+        
+        if best_partial is not None:
+            return best_partial, False
+        
+        return None, False
+    
+    def synchronize_timestamps_with_bracketing(
+        self,
+        peak_timestamps: np.ndarray,
+        peak_file_map: dict[float, Path],
+        log_files_data: list[dict[str, Any]],
+    ) -> dict[Path, dict[str, Any]]:
+        """
+        Synchronize timestamps using bracketing logic.
+        
+        For each detected peak timestamp:
+        1. Find the log file whose timestamps bracket it
+        2. Find the closest timestamp within that file
+        3. Replace that timestamp with the detected peak timestamp
+        
+        Parameters
+        ----------
+        peak_timestamps : np.ndarray
+            Array of detected peak timestamps (already filtered by SNR threshold)
+        peak_file_map : dict[float, Path]
+            Mapping from peak timestamp to the _Peak.txt file it came from
+        log_files_data : list[dict]
+            List of all log file data dictionaries
+            
+        Returns
+        -------
+        dict[Path, dict]
+            Mapping from log file path to modified log data dictionary
+        """
+        # Initialize result: each log file gets a copy of its original data
+        synchronized_logs = {}
+        for log_data in log_files_data:
+            synchronized_logs[log_data["file_path"]] = {
+                "data": log_data["data"].copy() if log_data["data"] is not None else None,
+                "azimuth": log_data["azimuth"].copy() if len(log_data["azimuth"]) > 0 else np.array([]),
+                "elevation": log_data["elevation"].copy() if len(log_data["elevation"]) > 0 else np.array([]),
+                "timestamps": log_data["timestamps"].copy(),
+                "file_path": log_data["file_path"],
+            }
+        
+        # Track replacements per log file
+        replacement_counts = {log_data["file_path"]: 0 for log_data in log_files_data}
+        
+        # Process each detected peak timestamp
+        for peak_ts in peak_timestamps:
+            # Find the log file that brackets this timestamp
+            bracketing_log, has_exact_bracket = self.find_bracketing_log_file(peak_ts, log_files_data)
+            
+            if bracketing_log is None:
+                continue
+            
+            log_file_path = bracketing_log["file_path"]
+            log_timestamps = bracketing_log["timestamps"]
+            
+            # Find closest timestamp within this log file
+            closest_idx, closest_ts, time_diff = self.find_closest_timestamp(peak_ts, log_timestamps)
+            
+            if closest_idx is not None:
+                # Replace the timestamp in the synchronized copy
+                synchronized_logs[log_file_path]["timestamps"][closest_idx] = peak_ts
+                replacement_counts[log_file_path] += 1
+        
+        # Print replacement statistics per file
+        for log_file_path, count in replacement_counts.items():
+            if count > 0:
+                log_data = synchronized_logs[log_file_path]
+                total = len(log_data["timestamps"])
+                print(f"  {log_file_path.name}: Replaced {count} out of {total} timestamps")
+        
+        return synchronized_logs
     
     def save_synchronized_log_file(
         self,
@@ -467,7 +619,7 @@ class TimestampSynchronizer:
         output_folder: Path | None = None,
     ) -> dict[str, Any]:
         """
-        Process all log files and peak files to synchronize timestamps.
+        Process all log files and peak files to synchronize timestamps using bracketing logic.
         
         Parameters
         ----------
@@ -496,91 +648,129 @@ class TimestampSynchronizer:
             print("No peak files found. Exiting.")
             return {"error": "No peak files found"}
         
-        # Load all peak files and identify timestamps with intensity above threshold in specific ranges
+        # Load all log files first
         print()
-        print("Step 1: Loading peak files and identifying timestamps with intensity above threshold...")
+        print("Step 1: Loading log files...")
         print("-" * 70)
-        print(f"Intensity threshold: {self.intensity_threshold}")
-        if self.range_indices:
-            print(f"Range indices to check: {self.range_indices}")
+        
+        log_files_data = []
+        for log_file in log_files:
+            log_data = self.load_log_file(log_file)
+            if len(log_data["timestamps"]) > 0:
+                log_files_data.append(log_data)
+        
+        print(f"\nLoaded {len(log_files_data)} log files with timestamps")
+        
+        # Load all peak files and identify timestamps with SNR above threshold in distance interval
+        print()
+        print("Step 2: Loading peak files and identifying timestamps with SNR above threshold...")
+        print("-" * 70)
+        print(f"SNR threshold: {self.snr_threshold} dB")
+        if self.distance_interval:
+            min_dist, max_dist = self.distance_interval
+            print(f"Distance interval: {min_dist:.0f} to {max_dist:.0f} m")
+            if self.range_indices:
+                print(f"  (Range indices: {self.range_indices[0]} to {self.range_indices[-1]})")
         else:
-            print("Range indices to check: All ranges")
+            print("Distance interval: All ranges")
+            if self.range_indices:
+                print(f"Range indices: {self.range_indices[0]} to {self.range_indices[-1]}")
         print()
         
         all_peak_timestamps = []
+        peak_file_map = {}  # Map timestamp -> peak file path
         peak_file_info = []
         
         for peak_file in peak_files:
             peak_data = self.load_peak_file(peak_file)
-            range_ts = self.identify_range_timestamps(peak_data)
+            detected_ts = self.identify_range_timestamps(peak_data)
             
-            all_peak_timestamps.extend(range_ts.tolist())
+            # Store mapping from timestamp to source file
+            for ts in detected_ts:
+                all_peak_timestamps.append(ts)
+                peak_file_map[float(ts)] = peak_file
+            
             peak_file_info.append({
                 "file": peak_file,
                 "total_timestamps": len(peak_data["timestamps"]),
-                "range_timestamps": len(range_ts),
+                "detected_timestamps": len(detected_ts),
             })
         
-        all_peak_timestamps = np.array(all_peak_timestamps)
-        print(f"\nTotal unique timestamps within intensity range: {len(all_peak_timestamps)}")
+        all_peak_timestamps = np.unique(np.array(all_peak_timestamps))
+        print(f"\nTotal unique timestamps with SNR > {self.snr_threshold} dB in distance interval: {len(all_peak_timestamps)}")
         
-        # Process each log file
+        # Synchronize timestamps using bracketing logic
         print()
-        print("Step 2: Processing log files and synchronizing timestamps...")
+        print("Step 3: Synchronizing timestamps using bracketing logic...")
+        print("-" * 70)
+        print("For each detected timestamp:")
+        print("  1. Find log file whose timestamps bracket it")
+        print("  2. Find closest timestamp within that file")
+        print("  3. Replace that timestamp with the detected one")
+        print()
+        
+        synchronized_logs = self.synchronize_timestamps_with_bracketing(
+            all_peak_timestamps,
+            peak_file_map,
+            log_files_data,
+        )
+        
+        # Save synchronized files
+        print()
+        print("Step 4: Saving synchronized log files...")
         print("-" * 70)
         
         results = []
+        total_replaced = 0
+        total_entries = 0
         
-        for log_file in log_files:
-            print(f"\nProcessing: {log_file.name}")
-            
-            # Load log file
-            log_data = self.load_log_file(log_file)
-            
-            if len(log_data["timestamps"]) == 0:
-                print(f"  Skipping: No timestamps in log file")
+        for log_file_path, synchronized_data in synchronized_logs.items():
+            original_log_data = next((ld for ld in log_files_data if ld["file_path"] == log_file_path), None)
+            if original_log_data is None:
                 continue
             
-            # Synchronize timestamps
-            synchronized_data = self.synchronize_log_file(log_data, all_peak_timestamps)
+            # Count replacements
+            original_ts = original_log_data["timestamps"]
+            synchronized_ts = synchronized_data["timestamps"]
+            replaced_count = np.sum(original_ts != synchronized_ts)
             
-            # Save synchronized file
-            output_path = self.save_synchronized_log_file(
-                synchronized_data,
-                output_folder=output_folder,
-            )
-            
-            results.append({
-                "original_file": str(log_file),
-                "output_file": str(output_path),
-                "total_entries": len(log_data["timestamps"]),
-                "replaced_timestamps": np.sum(
-                    synchronized_data["timestamps"] != log_data["timestamps"]
-                ),
-            })
+            if replaced_count > 0 or len(synchronized_ts) > 0:
+                # Save synchronized file
+                output_path = self.save_synchronized_log_file(
+                    synchronized_data,
+                    output_folder=output_folder,
+                )
+                
+                results.append({
+                    "original_file": str(log_file_path),
+                    "output_file": str(output_path),
+                    "total_entries": len(synchronized_ts),
+                    "replaced_timestamps": replaced_count,
+                })
+                
+                total_replaced += replaced_count
+                total_entries += len(synchronized_ts)
         
         # Summary
         print()
         print("=" * 70)
         print("Synchronization Summary")
         print("=" * 70)
-        print(f"Processed {len(log_files)} log files")
+        print(f"Processed {len(log_files_data)} log files")
         print(f"Used {len(peak_files)} peak files")
-        print(f"Total timestamps with intensity > {self.intensity_threshold} in specified ranges: {len(all_peak_timestamps)}")
+        print(f"Total unique timestamps with SNR > {self.snr_threshold} dB in distance interval: {len(all_peak_timestamps)}")
         print()
-        
-        total_replaced = sum(r["replaced_timestamps"] for r in results)
-        total_entries = sum(r["total_entries"] for r in results)
         
         print(f"Total timestamp replacements: {total_replaced} out of {total_entries} entries")
         print(f"Replacement rate: {100.0 * total_replaced / max(total_entries, 1):.1f}%")
         print()
         
         return {
-            "log_files_processed": len(log_files),
+            "log_files_processed": len(log_files_data),
             "peak_files_used": len(peak_files),
-            "total_range_timestamps": len(all_peak_timestamps),
-            "intensity_threshold": self.intensity_threshold,
+            "total_detected_timestamps": len(all_peak_timestamps),
+            "snr_threshold": self.snr_threshold,
+            "distance_interval": self.distance_interval,
             "range_indices": self.range_indices,
             "total_replacements": total_replaced,
             "total_entries": total_entries,
@@ -593,37 +783,50 @@ class TimestampSynchronizer:
 def synchronize_timestamps(
     log_folder: str | Path,
     peak_folder: str | Path,
-    intensity_threshold: float = 0.0,
-    range_indices: list[int] | None = None,
+    snr_threshold: float = 0.0,
+    distance_interval: tuple[float, float] | None = None,
     timestamp_tolerance: float = 0.1,
     output_folder: str | Path | None = None,
     processed_timestamp_column: int = 2,
     processed_data_start_column: int = 3,
+    range_step: float | None = None,
+    starting_range_index: int | None = None,
 ) -> dict[str, Any]:
     """
     Convenience function to synchronize timestamps between log files and peak files.
+    
+    This function implements the improved synchronization algorithm:
+    1. Identifies profile timestamps where any SNR value within the specified distance interval exceeds the threshold
+    2. For each such timestamp, finds the output*.txt file whose timestamps bracket it
+    3. Locates within that file the closest timestamp
+    4. Replaces that timestamp with the detected one
+    5. Writes the result to new files named output*_new.txt without modifying the originals
     
     Parameters
     ----------
     log_folder : str | Path
         Folder containing log files matching output*.txt pattern
     peak_folder : str | Path
-        Folder containing _Peak.txt files
-    intensity_threshold : float
-        Threshold for profile values. Timestamps where intensity exceeds this
-        threshold in the specified range indices are considered (default: 0.0)
-    range_indices : list[int] | None
-        List of range indices (column indices) to check in the profile.
-        Only these specific ranges are checked for intensity > threshold.
+        Folder containing subfolders with _Peak.txt files
+    snr_threshold : float
+        SNR threshold in dB. Timestamps where any SNR value exceeds this
+        threshold within the specified distance interval are considered (default: 0.0)
+    distance_interval : tuple[float, float] | None
+        Distance interval in meters (min_distance, max_distance).
+        Only SNR values within this distance range are checked.
         If None, checks all ranges (default: None)
     timestamp_tolerance : float
         Maximum time difference for matching (seconds, default: 0.1)
     output_folder : str | Path | None
         Output folder for synchronized log files (default: same as log_folder)
     processed_timestamp_column : int
-        Column index for timestamps in _Peak.txt files (default: 2)
+        Column index for timestamps in _Peak.txt files (default: 2, 0-indexed, so column 3)
     processed_data_start_column : int
-        Column index where profile data starts in _Peak.txt files (default: 3)
+        Column index where SNR data starts in _Peak.txt files (default: 3, 0-indexed, so column 4)
+    range_step : float | None
+        Range step in meters for converting distance to indices (default: from Config)
+    starting_range_index : int | None
+        Starting range index for converting distance to indices (default: from Config)
         
     Returns
     -------
@@ -633,11 +836,13 @@ def synchronize_timestamps(
     synchronizer = TimestampSynchronizer(
         log_folder=log_folder,
         peak_folder=peak_folder,
-        intensity_threshold=intensity_threshold,
-        range_indices=range_indices,
+        snr_threshold=snr_threshold,
+        distance_interval=distance_interval,
         timestamp_tolerance=timestamp_tolerance,
         processed_timestamp_column=processed_timestamp_column,
         processed_data_start_column=processed_data_start_column,
+        range_step=range_step,
+        starting_range_index=starting_range_index,
     )
     
     output_path = Path(output_folder) if output_folder is not None else None
